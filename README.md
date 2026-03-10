@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.jpg" alt="TrustMem Logo" width="200"/>
+</p>
+
 # TrustMem
 
 Persistent memory for AI coding tools — your AI assistant remembers across conversations.
