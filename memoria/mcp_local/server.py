@@ -31,6 +31,7 @@ class MemoryBackend:
     def store(self, user_id: str, content: str, memory_type: str, session_id: str | None) -> dict: ...
     def retrieve(self, user_id: str, query: str, top_k: int, session_id: str | None = None) -> list[dict]: ...
     def correct(self, user_id: str, memory_id: str, new_content: str, reason: str) -> dict: ...
+    def correct_by_query(self, user_id: str, query: str, new_content: str, reason: str) -> dict: ...
     def purge(self, user_id: str, memory_id: str | None, topic: str | None, reason: str) -> dict: ...
     def profile(self, user_id: str) -> dict: ...
     def search(self, user_id: str, query: str, top_k: int) -> list[dict]: ...
@@ -202,6 +203,22 @@ class EmbeddedBackend(MemoryBackend):
         editor = self._create_editor(db_factory, user_id=user_id, embed_client=embed_client)
         mem = editor.correct(user_id, memory_id, new_content, reason=reason)
         result: dict = {"memory_id": mem.memory_id, "content": mem.content}
+        if embed_client is None:
+            result["warning"] = "Embedding client not available — memory stored without vector. Retrieval will fall back to keyword search."
+        return result
+
+    def correct_by_query(self, user_id: str, query: str, new_content: str, reason: str) -> dict:
+        db_factory = self._branch_db_factory(user_id)
+        embed_client = self._get_embed_client()
+        editor = self._create_editor(db_factory, user_id=user_id, embed_client=embed_client)
+        match = editor.find_best_match(user_id, query)
+        if match is None:
+            return {"error": "no_match", "message": f"No memory found matching '{query}'"}
+        mem = editor.correct(user_id, match.memory_id, new_content, reason=reason)
+        result: dict = {
+            "memory_id": mem.memory_id, "content": mem.content,
+            "matched_memory_id": match.memory_id, "matched_content": match.content,
+        }
         if embed_client is None:
             result["warning"] = "Embedding client not available — memory stored without vector. Retrieval will fall back to keyword search."
         return result
@@ -968,6 +985,13 @@ class HTTPBackend(MemoryBackend):
         r.raise_for_status()
         return r.json()
 
+    def correct_by_query(self, user_id: str, query: str, new_content: str, reason: str) -> dict:
+        r = self._client.post("/v1/memories/correct", json={"query": query, "new_content": new_content, "reason": reason})
+        if r.status_code == 404:
+            return {"error": "no_match", "message": f"No memory found matching '{query}'"}
+        r.raise_for_status()
+        return r.json()
+
     def purge(self, user_id: str, memory_id: str | None, topic: str | None, reason: str) -> dict:
         if topic:
             # Search then purge each match.  Collect partial results so a
@@ -1136,20 +1160,33 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
 
     @server.tool()
     def memory_correct(
-        memory_id: str,
-        new_content: str,
+        memory_id: str | None = None,
+        new_content: str = "",
         reason: str = "",
+        query: str | None = None,
         user_id: str | None = None,
     ) -> str:
         """Correct an existing memory with updated information.
 
         Args:
-            memory_id: ID of the memory to correct.
+            memory_id: ID of the memory to correct. Either memory_id or query is required.
             new_content: The corrected content.
             reason: Why the correction is needed.
+            query: Search query to find the memory to correct. Uses semantic search to find the best match.
             user_id: User ID (optional).
         """
-        result = backend.correct(_user(user_id), memory_id, new_content, reason)
+        if not new_content:
+            return "new_content is required."
+        uid = _user(user_id)
+        if query and not memory_id:
+            result = backend.correct_by_query(uid, query, new_content, reason)
+            if result.get("error") == "no_match":
+                return result["message"]
+            matched = result.get("matched_content", "")
+            return f"Found '{matched}' → corrected to {result['memory_id']}: {result['content']}"
+        if not memory_id:
+            return "Provide either memory_id or query."
+        result = backend.correct(uid, memory_id, new_content, reason)
         return f"Corrected → {result['memory_id']}: {result['content']}"
 
     @server.tool()

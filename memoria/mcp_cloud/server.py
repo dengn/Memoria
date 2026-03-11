@@ -42,8 +42,19 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
         return "\n".join(lines)
 
     @server.tool()
-    async def memory_correct(memory_id: str, new_content: str, reason: str = "") -> str:
-        """Correct an existing memory."""
+    async def memory_correct(memory_id: str | None = None, new_content: str = "", reason: str = "", query: str | None = None) -> str:
+        """Correct an existing memory. Provide memory_id to correct by ID, or query to find and correct by semantic search."""
+        if not new_content:
+            return "new_content is required."
+        if query and not memory_id:
+            r = client.post("/v1/memories/correct", json={"query": query, "new_content": new_content, "reason": reason})
+            if r.status_code == 404:
+                return f"No memory found matching '{query}'"
+            r.raise_for_status()
+            d = r.json()
+            return f"Found '{d.get('matched_content', '')}' → corrected to {d['memory_id']}: {d['content'][:80]}"
+        if not memory_id:
+            return "Provide either memory_id or query."
         r = client.put(f"/v1/memories/{memory_id}/correct", json={"new_content": new_content, "reason": reason})
         r.raise_for_status()
         d = r.json()

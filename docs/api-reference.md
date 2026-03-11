@@ -130,6 +130,23 @@ PUT /v1/memories/{memory_id}/correct
 }
 ```
 
+### Correct Memory by Query
+
+```
+POST /v1/memories/correct
+```
+
+```json
+{
+  "query": "programming language preference",
+  "new_content": "User now prefers TypeScript",
+  "reason": "User changed preference"
+}
+```
+
+Finds the best-matching memory via semantic search and corrects it. Response includes `matched_memory_id` and `matched_content` showing which memory was found.
+```
+
 ### Delete Memory
 
 ```
@@ -389,6 +406,7 @@ Per API key, sliding window.
 | `POST /v1/memories` | 300/min |
 | `POST /v1/memories/batch` | 60/min |
 | `PUT /v1/memories/*/correct` | 120/min |
+| `POST /v1/memories/correct` | 120/min |
 | `DELETE /v1/memories/*` | 120/min |
 | `POST /v1/memories/purge` | 30/min |
 | `POST /v1/memories/retrieve` | 300/min |

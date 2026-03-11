@@ -264,6 +264,43 @@ class TestMemory:
         assert new[1] == 1
         assert new[2] == uid
 
+    def test_correct_by_query(self, client, db):
+        """POST /v1/memories/correct with query finds best match and corrects it."""
+        uid, h, _ = _make_user(client)
+        # Store a distinctive memory
+        mid = client.post("/v1/memories", json={"content": "My favorite database is PostgreSQL"}, headers=h).json()["memory_id"]
+
+        # Correct by query — should find the memory about databases
+        r = client.post("/v1/memories/correct", json={
+            "query": "favorite database",
+            "new_content": "My favorite database is MatrixOne",
+            "reason": "switched databases",
+        }, headers=h)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["content"] == "My favorite database is MatrixOne"
+        assert data["matched_memory_id"] == mid
+        assert data["matched_content"] == "My favorite database is PostgreSQL"
+
+        # DB: old memory deactivated, new memory active
+        old = db.execute(text("SELECT is_active FROM mem_memories WHERE memory_id = :mid"), {"mid": mid}).first()
+        assert old[0] == 0
+        new = db.execute(text(
+            "SELECT content, is_active, embedding FROM mem_memories WHERE memory_id = :mid"
+        ), {"mid": data["memory_id"]}).first()
+        assert new[0] == "My favorite database is MatrixOne"
+        assert new[1] == 1
+        assert new[2] is not None, "corrected memory must have embedding"
+
+    def test_correct_by_query_no_match(self, client):
+        """POST /v1/memories/correct returns 404 when no memory matches."""
+        _, h, _ = _make_user(client)
+        r = client.post("/v1/memories/correct", json={
+            "query": "something that does not exist at all xyz123",
+            "new_content": "irrelevant",
+        }, headers=h)
+        assert r.status_code == 404
+
     def test_delete_deactivates(self, client, db):
         _, h, _ = _make_user(client)
         mid = client.post("/v1/memories", json={"content": "to delete"}, headers=h).json()["memory_id"]

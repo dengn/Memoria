@@ -158,6 +158,27 @@ class TestMemory:
         assert r.status_code == 200
         assert r.json()["content"] == "corrected"
 
+    def test_correct_by_query(self, fresh_user):
+        _, h = fresh_user
+        mid = CLIENT.post("/v1/memories", json={"content": "My favorite language is Python"}, headers=h).json()["memory_id"]
+        r = CLIENT.post("/v1/memories/correct", json={
+            "query": "favorite language",
+            "new_content": "My favorite language is Rust",
+            "reason": "changed preference",
+        }, headers=h)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["content"] == "My favorite language is Rust"
+        assert data["matched_memory_id"] == mid
+
+    def test_correct_by_query_no_match(self, fresh_user):
+        _, h = fresh_user
+        r = CLIENT.post("/v1/memories/correct", json={
+            "query": "nonexistent topic xyz999",
+            "new_content": "irrelevant",
+        }, headers=h)
+        assert r.status_code == 404
+
     def test_delete(self, fresh_user):
         _, h = fresh_user
         mid = CLIENT.post("/v1/memories", json={"content": "to delete"}, headers=h).json()["memory_id"]

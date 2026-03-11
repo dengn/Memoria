@@ -84,7 +84,7 @@ Once connected, your AI assistant can use these 11 tools:
 | `memory_store` | Store a memory (fact, preference, decision) |
 | `memory_retrieve` | Retrieve relevant memories for a query |
 | `memory_search` | Semantic search over all memories |
-| `memory_correct` | Correct an existing memory |
+| `memory_correct` | Correct an existing memory (by ID or semantic search) |
 | `memory_purge` | Delete a memory |
 | `memory_profile` | Get memory profile and stats |
 | `memory_snapshot` | Create a read-only snapshot |
@@ -129,8 +129,15 @@ client.post("/v1/memories/batch", json={
     ]
 })
 
-# Correct a memory
+# Correct a memory by ID
 client.put("/v1/memories/MEMORY_ID/correct", json={
+    "new_content": "User prefers light mode now",
+    "reason": "User changed preference",
+})
+
+# Correct a memory by semantic search (no ID needed)
+client.post("/v1/memories/correct", json={
+    "query": "UI mode preference",
     "new_content": "User prefers light mode now",
     "reason": "User changed preference",
 })

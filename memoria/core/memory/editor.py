@@ -176,6 +176,26 @@ class MemoryEditor:
         )
         return stored
 
+    def find_best_match(self, user_id: str, query: str) -> Memory | None:
+        """Find the single best-matching active memory for a query via semantic search.
+
+        Returns None if no match found.
+        """
+        from memoria.core.memory.tabular.retriever import MemoryRetriever
+
+        retriever = MemoryRetriever(self._db_factory)
+        query_embedding: list[float] | None = None
+        if self._embed_client is not None:
+            try:
+                query_embedding = self._embed_client.embed(query)
+            except Exception:
+                logger.warning("Embedding failed for find_best_match query", exc_info=True)
+
+        memories, _ = retriever.retrieve(
+            user_id, query, session_id="", query_embedding=query_embedding, limit=1,
+        )
+        return memories[0] if memories else None
+
     def correct(
         self,
         user_id: str,

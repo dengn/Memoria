@@ -35,6 +35,7 @@ def _env_limit(name: str, default: tuple[int, int]) -> tuple[int, int]:
 _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "POST:/v1/memories":          _env_limit("STORE",       (300, 60)),
     "POST:/v1/memories/batch":    _env_limit("BATCH",       (60, 60)),
+    "POST:/v1/memories/correct":  _env_limit("CORRECT",     (120, 60)),
     "PUT:/v1/memories/":          _env_limit("CORRECT",     (120, 60)),
     "DELETE:/v1/memories/":       _env_limit("DELETE",      (120, 60)),
     "POST:/v1/memories/purge":    _env_limit("PURGE",       (30, 60)),

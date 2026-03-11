@@ -42,6 +42,12 @@ class CorrectRequest(BaseModel):
     reason: str = ""
 
 
+class CorrectByQueryRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    new_content: str = Field(..., min_length=1)
+    reason: str = ""
+
+
 class PurgeRequest(BaseModel):
     memory_ids: list[str] | None = None
     memory_types: list[str] | None = None
@@ -218,6 +224,22 @@ def correct_memory(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return _to_response(mem)
+
+
+@router.post("/memories/correct")
+def correct_by_query(
+    req: CorrectByQueryRequest,
+    user_id: str = Depends(get_current_user_id),
+    db_factory=Depends(get_db_factory),
+):
+    """Find the best-matching memory by semantic search and correct it."""
+    editor = _get_editor(db_factory, user_id)
+    match = editor.find_best_match(user_id, req.query)
+    if match is None:
+        raise HTTPException(status_code=404, detail="No matching memory found")
+    _verify_ownership(db_factory, match.memory_id, user_id)
+    mem = editor.correct(user_id, match.memory_id, req.new_content, reason=req.reason)
+    return {**_to_response(mem), "matched_memory_id": match.memory_id, "matched_content": match.content}
 
 
 @router.delete("/memories/{memory_id}")
