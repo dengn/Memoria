@@ -372,11 +372,11 @@ TrustMem exposes MCP tools that your AI tool calls automatically based on steeri
 
 | Tool | Description |
 |------|-------------|
-| `memory_branch` | Create a new branch for isolated experimentation |
+| `memory_branch` | Create a new branch for isolated experimentation (optionally from a snapshot or point-in-time) |
 | `memory_branches` | List all branches |
-| `memory_checkout` | Switch to a different branch |
+| `memory_checkout` | Switch to a different branch (shows up to `top_k` memories after switching) |
 | `memory_merge` | Merge a branch back into main |
-| `memory_diff` | Preview what would change on merge |
+| `memory_diff` | Preview what would change on merge (LCA-based diff with semantic classification) |
 | `memory_branch_delete` | Delete a branch |
 
 ### Maintenance
@@ -455,6 +455,13 @@ You: "Merge it"
 AI:  → calls memory_diff(source="eval_sqlite")   ← preview first
      → calls memory_merge(source="eval_sqlite", strategy="replace")
      ← "Merged 3 memories from 'eval_sqlite' (skipped 0)."
+```
+
+`memory_branch` also supports branching from a past point in time:
+
+```
+AI:  → calls memory_branch(name="debug", from_timestamp="2026-03-11 10:00:00")
+     (must be within the last 30 minutes)
 ```
 
 ---
