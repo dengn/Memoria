@@ -41,11 +41,14 @@ def _infer_default_dim() -> int:
     # Canonical source: core.embedding.client.KNOWN_DIMENSIONS (not imported
     # here — schema.py must stay self-contained with no core/ dependency).
     _MODEL_DIMS = {
-        "all-MiniLM-L6-v2": 384, "all-MiniLM-L12-v2": 384,
+        "all-MiniLM-L6-v2": 384,
+        "all-MiniLM-L12-v2": 384,
         "sentence-transformers/all-MiniLM-L6-v2": 384,
         "sentence-transformers/all-MiniLM-L12-v2": 384,
-        "BAAI/bge-m3": 1024, "BAAI/bge-base-en-v1.5": 768,
-        "text-embedding-3-small": 1536, "text-embedding-ada-002": 1536,
+        "BAAI/bge-m3": 1024,
+        "BAAI/bge-base-en-v1.5": 768,
+        "text-embedding-3-small": 1536,
+        "text-embedding-ada-002": 1536,
     }
     return _MODEL_DIMS.get(model, 1024)
 
@@ -253,9 +256,9 @@ def _fix_embedding_dim(conn: Any, dim: int, *, force: bool = False) -> None:
     Pass force=True (via ``memoria migrate --force``) to actually ALTER.
     """
     for table in ("mem_memories", "memory_graph_nodes"):
-        row = conn.execute(text(
-            f"SHOW COLUMNS FROM `{table}` LIKE 'embedding'"
-        )).fetchone()
+        row = conn.execute(
+            text(f"SHOW COLUMNS FROM `{table}` LIKE 'embedding'")
+        ).fetchone()
         if row is None:
             continue
         col_type: str = row[1]  # e.g. "vecf32(1024)"
@@ -266,33 +269,44 @@ def _fix_embedding_dim(conn: Any, dim: int, *, force: bool = False) -> None:
         if current_dim == dim:
             continue
         if force:
-            logger.info("Altering %s.embedding from %s to vecf32(%d)", table, col_type, dim)
-            conn.execute(text(
-                f"ALTER TABLE `{table}` MODIFY COLUMN `embedding` VECF32({dim}) DEFAULT NULL"
-            ))
+            logger.info(
+                "Altering %s.embedding from %s to vecf32(%d)", table, col_type, dim
+            )
+            conn.execute(
+                text(
+                    f"ALTER TABLE `{table}` MODIFY COLUMN `embedding` VECF32({dim}) DEFAULT NULL"
+                )
+            )
         else:
             logger.warning(
                 "Embedding dim mismatch: %s.embedding is %s but EMBEDDING_DIM=%d. "
                 "Existing vector data will not be re-embedded automatically. "
                 "Run `memoria migrate --dim %d --force` to ALTER the column "
                 "(existing embeddings will be cleared).",
-                table, col_type, dim, dim,
+                table,
+                col_type,
+                dim,
+                dim,
             )
 
 
 def _ensure_entity_type_column(conn: Any) -> None:
     """Add entity_type column to memory_graph_nodes if missing (v0.2.8 migration)."""
-    row = conn.execute(text(
-        "SHOW COLUMNS FROM `memory_graph_nodes` LIKE 'entity_type'"
-    )).fetchone()
+    row = conn.execute(
+        text("SHOW COLUMNS FROM `memory_graph_nodes` LIKE 'entity_type'")
+    ).fetchone()
     if row is None:
         logger.info("Adding entity_type column to memory_graph_nodes")
-        conn.execute(text(
-            "ALTER TABLE `memory_graph_nodes` ADD COLUMN `entity_type` VARCHAR(20) DEFAULT NULL AFTER `content`"
-        ))
+        conn.execute(
+            text(
+                "ALTER TABLE `memory_graph_nodes` ADD COLUMN `entity_type` VARCHAR(20) DEFAULT NULL AFTER `content`"
+            )
+        )
 
 
-def ensure_tables(engine: Engine, *, dim: int | None = None, force: bool = False) -> list[str]:
+def ensure_tables(
+    engine: Engine, *, dim: int | None = None, force: bool = False
+) -> list[str]:
     """Create database and memory tables if they don't exist.
 
     Idempotent — uses CREATE DATABASE/TABLE IF NOT EXISTS.

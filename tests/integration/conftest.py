@@ -19,21 +19,34 @@ def _get_engine():
     if _engine is not None:
         return _engine
     from matrixone import Client as MoClient
+
     host = os.environ["MEMORIA_DB_HOST"]
     port = int(os.environ["MEMORIA_DB_PORT"])
     user = os.environ.get("MEMORIA_DB_USER", "root")
     password = os.environ.get("MEMORIA_DB_PASSWORD", "111")
     db_name = os.environ["MEMORIA_DB_NAME"]
 
-    bootstrap = MoClient(host=host, port=port, user=user, password=password,
-                         database="mo_catalog", sql_log_mode="off")
+    bootstrap = MoClient(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database="mo_catalog",
+        sql_log_mode="off",
+    )
     with bootstrap._engine.connect() as c:
         c.execute(text(f"CREATE DATABASE IF NOT EXISTS `{db_name}`"))
         c.execute(text("COMMIT"))
     bootstrap._engine.dispose()
 
-    client = MoClient(host=host, port=port, user=user, password=password,
-                      database=db_name, sql_log_mode="off")
+    client = MoClient(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database=db_name,
+        sql_log_mode="off",
+    )
     _engine = client._engine
     return _engine
 
@@ -49,11 +62,13 @@ def _init_tables():
     """Create all tables with correct embedding dim."""
     engine = _get_engine()
     from memoria.schema import ensure_tables
+
     dim = int(os.environ.get("MEMORIA_EMBEDDING_DIM", "384"))
     ensure_tables(engine, dim=dim, force=True)
 
     # Also create graph tables if not exist
     from memoria.core.base import Base
+
     Base.metadata.create_all(bind=engine, checkfirst=True)
 
 

@@ -26,14 +26,16 @@ class FakeBackend(MemoryBackend):
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._memories: dict[str, dict] = {}   # memory_id → record
+        self._memories: dict[str, dict] = {}  # memory_id → record
         self._snapshots: dict[str, dict] = {}  # name → info
-        self._branches: dict[str, dict] = {}   # name → info
+        self._branches: dict[str, dict] = {}  # name → info
         self._active_branch: str = "main"
 
     # ── CRUD ──────────────────────────────────────────────────────────
 
-    def store(self, user_id: str, content: str, memory_type: str, session_id: str | None) -> dict:
+    def store(
+        self, user_id: str, content: str, memory_type: str, session_id: str | None
+    ) -> dict:
         mid = str(uuid.uuid4())
         with self._lock:
             self._memories[mid] = {
@@ -45,23 +47,33 @@ class FakeBackend(MemoryBackend):
             }
         return {"memory_id": mid, "content": content}
 
-    def retrieve(self, user_id: str, query: str, top_k: int, session_id: str | None = None) -> list[dict]:
+    def retrieve(
+        self, user_id: str, query: str, top_k: int, session_id: str | None = None
+    ) -> list[dict]:
         with self._lock:
             results = [
-                {"memory_id": mid, "memory_type": r["memory_type"], "content": r["content"]}
+                {
+                    "memory_id": mid,
+                    "memory_type": r["memory_type"],
+                    "content": r["content"],
+                }
                 for mid, r in self._memories.items()
                 if r["user_id"] == user_id and query.lower() in r["content"].lower()
             ]
         return results[:top_k]
 
-    def correct(self, user_id: str, memory_id: str, new_content: str, reason: str) -> dict:
+    def correct(
+        self, user_id: str, memory_id: str, new_content: str, reason: str
+    ) -> dict:
         with self._lock:
             if memory_id not in self._memories:
                 raise KeyError(f"Memory {memory_id} not found")
             self._memories[memory_id]["content"] = new_content
         return {"memory_id": memory_id, "content": new_content}
 
-    def purge(self, user_id: str, memory_id: str | None, topic: str | None, reason: str) -> dict:
+    def purge(
+        self, user_id: str, memory_id: str | None, topic: str | None, reason: str
+    ) -> dict:
         deleted = 0
         with self._lock:
             if memory_id:
@@ -70,7 +82,8 @@ class FakeBackend(MemoryBackend):
                     deleted = 1
             elif topic:
                 to_del = [
-                    mid for mid, r in self._memories.items()
+                    mid
+                    for mid, r in self._memories.items()
                     if r["user_id"] == user_id and topic.lower() in r["content"].lower()
                 ]
                 for mid in to_del:
@@ -107,7 +120,11 @@ class FakeBackend(MemoryBackend):
 
     def snapshot_create(self, user_id: str, name: str, description: str) -> dict:
         with self._lock:
-            self._snapshots[name] = {"name": name, "description": description, "timestamp": "2026-01-01 00:00"}
+            self._snapshots[name] = {
+                "name": name,
+                "description": description,
+                "timestamp": "2026-01-01 00:00",
+            }
         return {"name": name}
 
     def snapshot_list(self, user_id: str) -> list[dict]:
@@ -122,7 +139,13 @@ class FakeBackend(MemoryBackend):
 
     # ── Branches ──────────────────────────────────────────────────────
 
-    def branch_create(self, user_id: str, name: str, from_snapshot: str | None, from_timestamp: str | None) -> dict:
+    def branch_create(
+        self,
+        user_id: str,
+        name: str,
+        from_snapshot: str | None,
+        from_timestamp: str | None,
+    ) -> dict:
         with self._lock:
             self._branches[name] = {"name": name, "active": False}
         return {"name": name}
@@ -146,6 +169,28 @@ class FakeBackend(MemoryBackend):
 
     def branch_diff(self, user_id: str, source: str, limit: int) -> dict:
         return {"changes": [], "source": source}
+
+    # ── New methods (stubs) ───────────────────────────────────────────
+
+    def correct_by_query(
+        self, user_id: str, query: str, new_content: str, reason: str
+    ) -> dict:
+        matches = self.retrieve(user_id, query, 1)
+        if not matches:
+            raise KeyError(f"No memory found for query: {query}")
+        return self.correct(user_id, matches[0]["memory_id"], new_content, reason)
+
+    def extract_entities(self, user_id: str) -> dict:
+        return {"status": "ok", "entities_extracted": 0}
+
+    def get_entity_candidates(self, user_id: str) -> dict:
+        return {"candidates": []}
+
+    def get_reflect_candidates(self, user_id: str) -> dict:
+        return {"candidates": []}
+
+    def link_entities(self, user_id: str, entities: list[dict]) -> dict:
+        return {"status": "ok", "linked": len(entities)}
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -181,7 +226,13 @@ async def test_store_and_retrieve(server):
 async def test_correct(server, backend):
     stored = backend.store("test_user", "old content", "semantic", None)
     mid = stored["memory_id"]
-    result = await call(server, "memory_correct", memory_id=mid, new_content="new content", reason="update")
+    result = await call(
+        server,
+        "memory_correct",
+        memory_id=mid,
+        new_content="new content",
+        reason="update",
+    )
     assert "new content" in result
 
 
@@ -189,7 +240,7 @@ async def test_correct(server, backend):
 async def test_purge_by_id(server, backend):
     stored = backend.store("test_user", "to delete", "semantic", None)
     mid = stored["memory_id"]
-    result = await call(server, "memory_purge", memory_id=mid, reason="cleanup")
+    await call(server, "memory_purge", memory_id=mid, reason="cleanup")
     assert mid not in backend._memories
 
 
@@ -199,7 +250,9 @@ async def test_purge_by_topic(server, backend):
     backend.store("test_user", "python tip 2", "semantic", None)
     backend.store("test_user", "unrelated memory", "semantic", None)
     await call(server, "memory_purge", topic="python", reason="cleanup")
-    remaining = [r for r in backend._memories.values() if "python" in r["content"].lower()]
+    remaining = [
+        r for r in backend._memories.values() if "python" in r["content"].lower()
+    ]
     assert len(remaining) == 0
 
 
@@ -257,8 +310,7 @@ async def test_concurrent_store(server, backend):
     """50 concurrent store calls must all succeed without data loss."""
     n = 50
     tasks = [
-        call(server, "memory_store", content=f"concurrent memory {i}")
-        for i in range(n)
+        call(server, "memory_store", content=f"concurrent memory {i}") for i in range(n)
     ]
     results = await asyncio.gather(*tasks)
     assert len(results) == n
@@ -274,8 +326,7 @@ async def test_concurrent_store_and_retrieve(server, backend):
         for i in range(20)
     ]
     retrieve_tasks = [
-        call(server, "memory_retrieve", query=f"topic_{i % 5}")
-        for i in range(20)
+        call(server, "memory_retrieve", query=f"topic_{i % 5}") for i in range(20)
     ]
     results = await asyncio.gather(*store_tasks, *retrieve_tasks)
     assert len(results) == 40
@@ -317,6 +368,9 @@ async def test_concurrent_purge_no_double_delete(server, backend):
     mid = stored["memory_id"]
 
     # Fire 5 concurrent purges for the same ID — only one should delete, rest are no-ops
-    tasks = [call(server, "memory_purge", memory_id=mid, reason="concurrent") for _ in range(5)]
-    results = await asyncio.gather(*tasks)
+    tasks = [
+        call(server, "memory_purge", memory_id=mid, reason="concurrent")
+        for _ in range(5)
+    ]
+    await asyncio.gather(*tasks)
     assert mid not in backend._memories

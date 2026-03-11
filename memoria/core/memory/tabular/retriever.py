@@ -24,6 +24,7 @@ from sqlalchemy import literal_column, text
 from sqlalchemy.sql import func
 
 from memoria.core.db_consumer import DbConsumer, DbFactory
+from memoria.core.memory.config import MemoryGovernanceConfig
 from memoria.core.memory.tabular.explain import CandidateScore, RetrievalStats
 from memoria.core.memory.tabular.metrics import MemoryMetrics, Timer
 from memoria.core.memory.types import Memory, MemoryType, RetrievalWeights, TrustTier
@@ -33,7 +34,9 @@ logger = logging.getLogger(__name__)
 # Task-hint → weight presets (all sum to 1.0)
 TASK_WEIGHTS: dict[str, RetrievalWeights] = {
     "code": RetrievalWeights(vector=0.3, keyword=0.25, temporal=0.15, confidence=0.3),
-    "reasoning": RetrievalWeights(vector=0.4, keyword=0.1, temporal=0.2, confidence=0.3),
+    "reasoning": RetrievalWeights(
+        vector=0.4, keyword=0.1, temporal=0.2, confidence=0.3
+    ),
     "recall": RetrievalWeights(vector=0.5, keyword=0.1, temporal=0.3, confidence=0.1),
     "default": RetrievalWeights(vector=0.3, keyword=0.2, temporal=0.2, confidence=0.3),
 }
@@ -42,11 +45,12 @@ TASK_WEIGHTS: dict[str, RetrievalWeights] = {
 def _relevance_expr(w_time: float, w_conf: float, decay_hours: float, half_life: float):
     """Build ORM expression for temporal + confidence scoring."""
     from memoria.core.memory.models.memory import MemoryRecord as M
+
     age_hours = func.timestampdiff(text("HOUR"), M.observed_at, func.now())
     age_days = func.timestampdiff(text("DAY"), M.observed_at, func.now())
     return (
-        w_time * func.exp(-age_hours / decay_hours) +
-        w_conf * (M.initial_confidence * func.exp(-age_days / half_life))
+        w_time * func.exp(-age_hours / decay_hours)
+        + w_conf * (M.initial_confidence * func.exp(-age_days / half_life))
     ).label("relevance")
 
 
@@ -90,7 +94,7 @@ class MemoryRetriever(DbConsumer):
         decay_hours: float = 720.0,
         half_life_days: float = 30.0,
         metrics: Optional[MemoryMetrics] = None,
-        config: Optional["MemoryGovernanceConfig"] = None,
+        config: Optional[MemoryGovernanceConfig] = None,
     ):
         super().__init__(db_factory)
         self.decay_hours = decay_hours
@@ -98,6 +102,7 @@ class MemoryRetriever(DbConsumer):
         self._metrics = metrics or MemoryMetrics()
         if config is None:
             from memoria.core.memory.config import DEFAULT_CONFIG
+
             config = DEFAULT_CONFIG
         self._config = config
 
@@ -117,13 +122,21 @@ class MemoryRetriever(DbConsumer):
         start = time.time() if explain else 0
         stats = RetrievalStats() if explain else None
 
-        weights = weights or TASK_WEIGHTS.get(task_hint or "default", TASK_WEIGHTS["default"])
-        memory_types = memory_types or [MemoryType.SEMANTIC, MemoryType.PROCEDURAL, MemoryType.PROFILE]
+        weights = weights or TASK_WEIGHTS.get(
+            task_hint or "default", TASK_WEIGHTS["default"]
+        )
+        memory_types = memory_types or [
+            MemoryType.SEMANTIC,
+            MemoryType.PROCEDURAL,
+            MemoryType.PROFILE,
+        ]
         type_values = tuple(t.value for t in memory_types)
 
         base_params = {
-            "uid": user_id, "types": type_values,
-            "decay_hours": self.decay_hours, "half_life": self.half_life_days,
+            "uid": user_id,
+            "types": type_values,
+            "decay_hours": self.decay_hours,
+            "half_life": self.half_life_days,
             "session_id": session_id,
             "include_cross": include_cross_session,
         }
@@ -133,7 +146,10 @@ class MemoryRetriever(DbConsumer):
                 # Phase 1
                 p1_start = time.time() if explain else 0
                 phase1, p1_stats = self._phase1(
-                    db, query_text, base_params, weights,
+                    db,
+                    query_text,
+                    base_params,
+                    weights,
                     limit * 2 if query_embedding else limit,
                 )
             if stats:
@@ -169,7 +185,9 @@ class MemoryRetriever(DbConsumer):
             merge_start = time.time() if explain else 0
             memories = self._merge(phase1, phase2, user_id, weights, limit, stats=stats)
             if stats:
-                stats.merged_candidates = len({c.memory_id for c in phase1} | {c.memory_id for c in phase2})
+                stats.merged_candidates = len(
+                    {c.memory_id for c in phase1} | {c.memory_id for c in phase2}
+                )
                 stats.final_count = len(memories)
                 stats.merge_ms = (time.time() - merge_start) * 1000
                 stats.total_ms = (time.time() - start) * 1000
@@ -177,8 +195,12 @@ class MemoryRetriever(DbConsumer):
             return memories, stats
 
     def _phase1(
-        self, db, query_text: str, base_params: dict,
-        weights: RetrievalWeights, limit: int,
+        self,
+        db,
+        query_text: str,
+        base_params: dict,
+        weights: RetrievalWeights,
+        limit: int,
     ) -> tuple[list[_Candidate], _PhaseStats]:
         total = weights.temporal + weights.confidence
         w_time = weights.temporal / total if total > 0 else 0.5
@@ -194,15 +216,23 @@ class MemoryRetriever(DbConsumer):
         include_cross = base_params["include_cross"]
 
         def _base_query():
-            q = (
-                db.query(M.memory_id, M.content, M.memory_type, M.initial_confidence,
-                         M.observed_at, M.session_id, M.trust_tier, rel)
-                .filter(M.user_id == uid, M.is_active > 0, M.memory_type.in_(type_values))
-            )
+            q = db.query(
+                M.memory_id,
+                M.content,
+                M.memory_type,
+                M.initial_confidence,
+                M.observed_at,
+                M.session_id,
+                M.trust_tier,
+                rel,
+            ).filter(M.user_id == uid, M.is_active > 0, M.memory_type.in_(type_values))
             if include_cross:
                 if session_id:
                     from sqlalchemy import or_
-                    q = q.filter(or_(M.session_id == session_id, M.session_id.is_(None)))
+
+                    q = q.filter(
+                        or_(M.session_id == session_id, M.session_id.is_(None))
+                    )
                 # else: no session filter — return memories from all sessions
             else:
                 q = q.filter(M.session_id == session_id)
@@ -212,6 +242,7 @@ class MemoryRetriever(DbConsumer):
             stats.keyword_attempted = True
             try:
                 from matrixone.sqlalchemy_ext import boolean_match
+
                 # Strip characters that MySQL fulltext boolean mode treats as
                 # operators or that would break the inlined SQL literal.
                 # boolean_match.compile() inlines the text without escaping.
@@ -220,7 +251,9 @@ class MemoryRetriever(DbConsumer):
                 # compile() returns a complete SQL literal, e.g.
                 # "MATCH(content) AGAINST('+term' IN BOOLEAN MODE)"
                 ft_sql = ft.compile()
-                assert ft_sql.startswith("MATCH("), f"Unexpected ft.compile() output: {ft_sql!r}"
+                assert ft_sql.startswith("MATCH("), (
+                    f"Unexpected ft.compile() output: {ft_sql!r}"
+                )
                 ft_score = literal_column(ft_sql).label("ft_score")
                 rows = (
                     _base_query()
@@ -233,9 +266,19 @@ class MemoryRetriever(DbConsumer):
                 if rows:
                     self._metrics.increment("retrieval_keyword_hits")
                     stats.keyword_hit = True
-                    return [_Candidate(r.memory_id, r.content, r.memory_type, r.initial_confidence,
-                                       r.observed_at, r.session_id, trust_tier=r.trust_tier or "T3",
-                                       keyword_score=float(r.ft_score or 0.0)) for r in rows], stats
+                    return [
+                        _Candidate(
+                            r.memory_id,
+                            r.content,
+                            r.memory_type,
+                            r.initial_confidence,
+                            r.observed_at,
+                            r.session_id,
+                            trust_tier=r.trust_tier or "T3",
+                            keyword_score=float(r.ft_score or 0.0),
+                        )
+                        for r in rows
+                    ], stats
             except Exception as e:
                 logger.debug("Keyword search failed: %s", e)
                 self._metrics.increment("retrieval_keyword_errors")
@@ -243,11 +286,25 @@ class MemoryRetriever(DbConsumer):
 
         rows = _base_query().order_by(rel.desc()).limit(limit).all()
         self._metrics.increment("retrieval_fallback_hits")
-        return [_Candidate(r.memory_id, r.content, r.memory_type, r.initial_confidence,
-                           r.observed_at, r.session_id, trust_tier=r.trust_tier or "T3") for r in rows], stats
+        return [
+            _Candidate(
+                r.memory_id,
+                r.content,
+                r.memory_type,
+                r.initial_confidence,
+                r.observed_at,
+                r.session_id,
+                trust_tier=r.trust_tier or "T3",
+            )
+            for r in rows
+        ], stats
 
     def _phase2(
-        self, db, query_embedding: list[float], base_params: dict, limit: int,
+        self,
+        db,
+        query_embedding: list[float],
+        base_params: dict,
+        limit: int,
     ) -> tuple[list[_Candidate], _PhaseStats]:
         stats = _PhaseStats(vector_attempted=True)
 
@@ -262,53 +319,89 @@ class MemoryRetriever(DbConsumer):
         include_cross = base_params["include_cross"]
 
         try:
-            q = (
-                db.query(M.memory_id, M.content, M.memory_type, M.initial_confidence,
-                         M.observed_at, M.session_id, M.trust_tier, dist_expr)
-                .filter(M.user_id == uid, M.is_active > 0,
-                        M.memory_type.in_(type_values), M.embedding.isnot(None))
+            q = db.query(
+                M.memory_id,
+                M.content,
+                M.memory_type,
+                M.initial_confidence,
+                M.observed_at,
+                M.session_id,
+                M.trust_tier,
+                dist_expr,
+            ).filter(
+                M.user_id == uid,
+                M.is_active > 0,
+                M.memory_type.in_(type_values),
+                M.embedding.isnot(None),
             )
             if include_cross:
                 if session_id:
                     from sqlalchemy import or_
-                    q = q.filter(or_(M.session_id == session_id, M.session_id.is_(None)))
+
+                    q = q.filter(
+                        or_(M.session_id == session_id, M.session_id.is_(None))
+                    )
                 # else: no session filter — return memories from all sessions
             else:
                 q = q.filter(M.session_id == session_id)
             rows = q.order_by("l2_dist").limit(limit).all()
             self._metrics.increment("retrieval_vector_hits")
             stats.vector_hit = bool(rows)
-            return [_Candidate(r.memory_id, r.content, r.memory_type, r.initial_confidence,
-                               r.observed_at, r.session_id, trust_tier=r.trust_tier or "T3",
-                               l2_dist=float(r.l2_dist)) for r in rows], stats
+            return [
+                _Candidate(
+                    r.memory_id,
+                    r.content,
+                    r.memory_type,
+                    r.initial_confidence,
+                    r.observed_at,
+                    r.session_id,
+                    trust_tier=r.trust_tier or "T3",
+                    l2_dist=float(r.l2_dist),
+                )
+                for r in rows
+            ], stats
         except Exception as e:
             logger.warning("Vector search failed: %s", e)
             self._metrics.increment("retrieval_vector_errors")
             stats.vector_error = str(e)
             return [], stats
 
-    def _score_candidate(self, c: _Candidate, weights: RetrievalWeights, now_ts: float) -> tuple[float, float, float, float, float]:
+    def _score_candidate(
+        self, c: _Candidate, weights: RetrievalWeights, now_ts: float
+    ) -> tuple[float, float, float, float, float]:
         """Compute 4-dimension scores + weighted final score for a candidate."""
         vec_score = 1.0 / (1.0 + c.l2_dist) if c.l2_dist is not None else 0.0
         # Normalize BM25 score to 0-1 via saturating transform: score/(score+1)
         # BM25 scores are non-negative by definition; clamp to 0 defensively.
-        kw_score = max(0.0, c.keyword_score) / (max(0.0, c.keyword_score) + 1.0) if c.keyword_score > 0 else 0.0
+        kw_score = (
+            max(0.0, c.keyword_score) / (max(0.0, c.keyword_score) + 1.0)
+            if c.keyword_score > 0
+            else 0.0
+        )
 
         if c.observed_at:
             age_hours = (now_ts - c.observed_at.timestamp()) / 3600.0
             time_score = _safe_exp(-age_hours / self.decay_hours)
             age_days = age_hours / 24.0
-            tier_half_life = self._config.half_lives.get(c.trust_tier, self.half_life_days)
+            tier_half_life = self._config.half_lives.get(
+                c.trust_tier, self.half_life_days
+            )
             conf_score = c.initial_confidence * _safe_exp(-age_days / tier_half_life)
         else:
             time_score, conf_score = 0.0, c.initial_confidence
 
-        final = (weights.vector * vec_score + weights.keyword * kw_score +
-                 weights.temporal * time_score + weights.confidence * conf_score)
+        final = (
+            weights.vector * vec_score
+            + weights.keyword * kw_score
+            + weights.temporal * time_score
+            + weights.confidence * conf_score
+        )
         return final, vec_score, kw_score, time_score, conf_score
 
     def _annotate_scores(
-        self, candidates: list[_Candidate], weights: RetrievalWeights,
+        self,
+        candidates: list[_Candidate],
+        weights: RetrievalWeights,
         stats: RetrievalStats,
     ) -> None:
         """Compute per-candidate scores for explain mode without re-ranking.
@@ -319,20 +412,26 @@ class MemoryRetriever(DbConsumer):
         scores = []
         for i, c in enumerate(candidates):
             sc = self._score_candidate(c, weights, now_ts)
-            scores.append(CandidateScore(
-                memory_id=c.memory_id,
-                final_score=round(sc[0], 4),
-                vector_score=round(sc[1], 4),
-                keyword_score=round(sc[2], 4),
-                temporal_score=round(sc[3], 4),
-                confidence_score=round(sc[4], 4),
-                rank=i + 1,
-            ))
+            scores.append(
+                CandidateScore(
+                    memory_id=c.memory_id,
+                    final_score=round(sc[0], 4),
+                    vector_score=round(sc[1], 4),
+                    keyword_score=round(sc[2], 4),
+                    temporal_score=round(sc[3], 4),
+                    confidence_score=round(sc[4], 4),
+                    rank=i + 1,
+                )
+            )
         stats.candidate_scores = scores
 
     def _merge(
-        self, phase1: list[_Candidate], phase2: list[_Candidate],
-        user_id: str, weights: RetrievalWeights, limit: int,
+        self,
+        phase1: list[_Candidate],
+        phase2: list[_Candidate],
+        user_id: str,
+        weights: RetrievalWeights,
+        limit: int,
         stats: Optional[RetrievalStats] = None,
     ) -> list[Memory]:
         merged: dict[str, _Candidate] = {}
@@ -352,8 +451,7 @@ class MemoryRetriever(DbConsumer):
         if stats:
             # Compute full breakdown once, sort by final, then extract scores
             scored_full = [
-                (self._score_candidate(c, weights, now_ts), c)
-                for c in merged.values()
+                (self._score_candidate(c, weights, now_ts), c) for c in merged.values()
             ]
             scored_full.sort(key=lambda x: x[0][0], reverse=True)
             selected = scored_full[:limit]
@@ -373,8 +471,7 @@ class MemoryRetriever(DbConsumer):
 
         # Hot path: only compute final score, skip per-dimension breakdown
         scored = [
-            (self._score_candidate(c, weights, now_ts)[0], c)
-            for c in merged.values()
+            (self._score_candidate(c, weights, now_ts)[0], c) for c in merged.values()
         ]
         scored.sort(key=lambda x: x[0], reverse=True)
         return [self._to_memory(c, user_id) for _, c in scored[:limit]]
@@ -382,9 +479,14 @@ class MemoryRetriever(DbConsumer):
     @staticmethod
     def _to_memory(c: _Candidate, user_id: str) -> Memory:
         return Memory(
-            memory_id=c.memory_id, user_id=user_id,
-            memory_type=MemoryType(c.memory_type), content=c.content,
-            initial_confidence=c.initial_confidence, session_id=c.session_id,
+            memory_id=c.memory_id,
+            user_id=user_id,
+            memory_type=MemoryType(c.memory_type),
+            content=c.content,
+            initial_confidence=c.initial_confidence,
+            session_id=c.session_id,
             observed_at=c.observed_at,
-            trust_tier=TrustTier(c.trust_tier) if c.trust_tier else TrustTier.T3_INFERRED,
+            trust_tier=TrustTier(c.trust_tier)
+            if c.trust_tier
+            else TrustTier.T3_INFERRED,
         )

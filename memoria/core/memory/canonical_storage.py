@@ -46,6 +46,7 @@ class CanonicalStorage:
 
         if config is None:
             from memoria.core.memory.config import DEFAULT_CONFIG
+
             self._config = DEFAULT_CONFIG
         else:
             self._config = config
@@ -64,6 +65,7 @@ class CanonicalStorage:
     def _store_lazy(self) -> Any:
         if self._store is None:
             from memoria.core.memory.tabular.store import MemoryStore
+
             self._store = MemoryStore(self._db_factory, metrics=self._metrics)
         return self._store
 
@@ -71,6 +73,7 @@ class CanonicalStorage:
     def _observer_lazy(self) -> Any:
         if self._observer is None:
             from memoria.core.memory.tabular.typed_observer import TypedObserver
+
             self._observer = TypedObserver(
                 store=self._store_lazy,
                 llm_client=self._llm_client,
@@ -84,6 +87,7 @@ class CanonicalStorage:
     def _profile_mgr_lazy(self) -> Any:
         if self._profile_mgr is None:
             from memoria.core.memory.tabular.profile import ProfileManager
+
             self._profile_mgr = ProfileManager(self._store_lazy)
         return self._profile_mgr
 
@@ -91,9 +95,13 @@ class CanonicalStorage:
     def _governance_lazy(self) -> Any:
         if self._governance is None:
             from memoria.core.memory.tabular.governance import GovernanceScheduler
+
             self._governance = GovernanceScheduler(
-                self._db_factory, config=self._config, metrics=self._metrics,
-                llm_client=self._llm_client, embed_fn=self._embed_fn,
+                self._db_factory,
+                config=self._config,
+                metrics=self._metrics,
+                llm_client=self._llm_client,
+                embed_fn=self._embed_fn,
             )
         return self._governance
 
@@ -101,6 +109,7 @@ class CanonicalStorage:
     def _health_lazy(self) -> Any:
         if self._health is None:
             from memoria.core.memory.tabular.health import MemoryHealth
+
             self._health = MemoryHealth(
                 self._db_factory,
                 pollution_threshold=self._config.pollution_threshold,
@@ -111,6 +120,7 @@ class CanonicalStorage:
     def _summarizer_lazy(self) -> Any:
         if self._summarizer is None:
             from memoria.core.memory.tabular.session_summary import SessionSummarizer
+
             self._summarizer = SessionSummarizer(
                 store=self._store_lazy,
                 llm_client=self._llm_client,
@@ -144,7 +154,9 @@ class CanonicalStorage:
 
         sensitivity = check_sensitivity(content)
         if sensitivity.blocked:
-            raise ValueError(f"Content blocked by sensitivity filter: {sensitivity.matched_labels}")
+            raise ValueError(
+                f"Content blocked by sensitivity filter: {sensitivity.matched_labels}"
+            )
         if sensitivity.redacted_content is not None:
             content = sensitivity.redacted_content
 
@@ -231,7 +243,9 @@ class CanonicalStorage:
         session_id: str,
         messages: list[dict[str, Any]],
     ) -> Memory | None:
-        return self._summarizer_lazy.generate_full_summary(user_id, session_id, messages)
+        return self._summarizer_lazy.generate_full_summary(
+            user_id, session_id, messages
+        )
 
     def check_and_summarize(
         self,
@@ -242,7 +256,11 @@ class CanonicalStorage:
         session_start: Any,
     ) -> Memory | None:
         return self._summarizer_lazy.check_and_summarize(
-            user_id, session_id, messages, turn_count, session_start,
+            user_id,
+            session_id,
+            messages,
+            turn_count,
+            session_start,
         )
 
     # ── Governance ────────────────────────────────────────────────────
@@ -295,7 +313,8 @@ class CanonicalStorage:
         storage = self._health_lazy.get_storage_stats(user_id)
         per_type = self._health_lazy.analyze(user_id)
         pollution = self._health_lazy.detect_pollution(
-            user_id, _utcnow() - timedelta(days=1),
+            user_id,
+            _utcnow() - timedelta(days=1),
         )
         return HealthReport(
             total=storage.get("total", 0),
@@ -357,16 +376,22 @@ class CanonicalStorage:
         load_embedding: bool = True,
     ) -> list[Memory]:
         return self._store_lazy.list_active(
-            user_id, memory_type=memory_type, limit=limit,
+            user_id,
+            memory_type=memory_type,
+            limit=limit,
             load_embedding=load_embedding,
         )
 
     # ── Reflection candidates ─────────────────────────────────────────
 
     def get_reflection_candidates(
-        self, user_id: str, *, since_hours: int = 24,
+        self,
+        user_id: str,
+        *,
+        since_hours: int = 24,
     ) -> Any:
         """Get reflection candidates from governance scheduler."""
         return self._governance_lazy.get_reflection_candidates(
-            user_id, since_hours=since_hours,
+            user_id,
+            since_hours=since_hours,
         )

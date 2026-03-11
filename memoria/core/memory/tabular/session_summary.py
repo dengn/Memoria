@@ -37,8 +37,12 @@ class SessionSummarizer:
         self.embed_fn = embed_fn
         self.config = config or DEFAULT_CONFIG
         self._incremental_ids: dict[str, list[str]] = {}  # session_id -> [memory_ids]
-        self._last_summary_idx: dict[str, int] = {}  # session_id -> last summarized msg index
-        self._last_summary_time: dict[str, datetime] = {}  # session_id -> last summary time
+        self._last_summary_idx: dict[
+            str, int
+        ] = {}  # session_id -> last summarized msg index
+        self._last_summary_time: dict[
+            str, datetime
+        ] = {}  # session_id -> last summary time
 
     def check_and_summarize(
         self,
@@ -108,7 +112,10 @@ class SessionSummarizer:
         return mem
 
     def _generate_incremental(
-        self, user_id: str, session_id: str, messages: list[dict[str, Any]],
+        self,
+        user_id: str,
+        session_id: str,
+        messages: list[dict[str, Any]],
     ) -> Optional[Memory]:
         # Only summarize messages since last summary
         start_idx = self._last_summary_idx.get(session_id, 0)
@@ -152,12 +159,18 @@ class SessionSummarizer:
 
         if self.llm and len(concat) > 100:
             try:
-                prompt = "Summarize this conversation in 2-3 sentences." if full else \
-                         "Summarize the recent part of this conversation in 1-2 sentences."
-                result = self.llm.chat_with_tools(messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": concat[:4000]},
-                ], task_hint="session_summary")
+                prompt = (
+                    "Summarize this conversation in 2-3 sentences."
+                    if full
+                    else "Summarize the recent part of this conversation in 1-2 sentences."
+                )
+                result = self.llm.chat_with_tools(
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": concat[:4000]},
+                    ],
+                    task_hint="session_summary",
+                )
                 return result.get("content") or concat[:500]
             except Exception:
                 pass

@@ -11,4 +11,6 @@ class MemoryUserState(Base):
 
     user_id = Column(String(64), primary_key=True)
     active_branch = Column(String(100), nullable=False, server_default="main")
-    updated_at = Column(DateTime6, nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime6, nullable=False, server_default=func.now(), onupdate=func.now()
+    )

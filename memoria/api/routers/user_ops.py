@@ -25,7 +25,11 @@ def _with_cache(user_id: str, op: str, fn, force: bool) -> dict:
             ts, result = cached
             remaining = _TTL[op] - (now - ts)
             if remaining > 0:
-                return {**result, "cached": True, "cooldown_remaining_s": int(remaining)}
+                return {
+                    **result,
+                    "cached": True,
+                    "cooldown_remaining_s": int(remaining),
+                }
     result = fn()
     _cache[key] = (now, result)
     return result
@@ -38,11 +42,14 @@ def consolidate(
     db_factory=Depends(get_db_factory),
 ):
     """Detect contradictions, fix orphaned nodes. 30min cooldown."""
+
     def _run():
         from memoria.core.memory.factory import create_memory_service
+
         svc = create_memory_service(db_factory, user_id=user_id)
         result = svc.consolidate(user_id)
         return result if isinstance(result, dict) else {"status": "done"}
+
     return _with_cache(user_id, "consolidate", _run, force)
 
 
@@ -53,6 +60,7 @@ def reflect(
     db_factory=Depends(get_db_factory),
 ):
     """Analyze memory clusters, synthesize insights. 2h cooldown. Requires LLM."""
+
     def _run():
         try:
             from memoria.core.memory.reflection.engine import ReflectionEngine
@@ -63,12 +71,14 @@ def reflect(
             provider = CandidateProvider(db_factory)
             # LLM client — may not be configured
             from memoria.core.llm import get_llm_client
+
             llm = get_llm_client()
             engine = ReflectionEngine(provider, store, llm)
             result = engine.reflect(user_id)
             return {"insights": len(result.new_scenes), "skipped": result.skipped}
         except Exception as e:
             return {"insights": 0, "skipped": 0, "note": f"reflect unavailable: {e}"}
+
     return _with_cache(user_id, "reflect", _run, force)
 
 
@@ -79,15 +89,23 @@ def extract_entities(
     db_factory=Depends(get_db_factory),
 ):
     """LLM entity extraction for unlinked memories. Manual trigger only. 1h cooldown."""
+
     def _run():
         try:
             from memoria.core.memory.graph.service import GraphMemoryService
             from memoria.core.llm import get_llm_client
+
             llm = get_llm_client()
             svc = GraphMemoryService(db_factory)
             return svc.extract_entities_llm(user_id, llm)
         except Exception as e:
-            return {"total_memories": 0, "entities_found": 0, "edges_created": 0, "error": str(e)}
+            return {
+                "total_memories": 0,
+                "entities_found": 0,
+                "edges_created": 0,
+                "error": str(e),
+            }
+
     return _with_cache(user_id, "extract_entities", _run, force)
 
 
@@ -98,16 +116,26 @@ def reflect_candidates(
 ):
     """Return raw reflection candidates for user-LLM synthesis (no internal LLM needed)."""
     from memoria.core.memory.graph.candidates import GraphCandidateProvider
+
     provider = GraphCandidateProvider(db_factory)
     candidates = provider.get_reflection_candidates(user_id)
-    return {"candidates": [
-        {
-            "signal": c.signal,
-            "importance": round(c.importance_score, 3),
-            "memories": [{"memory_id": m.memory_id, "content": m.content, "type": str(m.memory_type)} for m in c.memories],
-        }
-        for c in candidates
-    ]}
+    return {
+        "candidates": [
+            {
+                "signal": c.signal,
+                "importance": round(c.importance_score, 3),
+                "memories": [
+                    {
+                        "memory_id": m.memory_id,
+                        "content": m.content,
+                        "type": str(m.memory_type),
+                    }
+                    for m in c.memories
+                ],
+            }
+            for c in candidates
+        ]
+    }
 
 
 @router.post("/extract-entities/candidates")
@@ -118,20 +146,34 @@ def entity_candidates(
     """Return unlinked memories for user-LLM entity extraction."""
     from memoria.core.memory.graph.graph_store import GraphStore
     from memoria.core.memory.graph.types import EdgeType, NodeType
+
     store = GraphStore(db_factory)
-    nodes = store.get_user_nodes(user_id, node_type=NodeType.SEMANTIC, active_only=True, load_embedding=False)
+    nodes = store.get_user_nodes(
+        user_id, node_type=NodeType.SEMANTIC, active_only=True, load_embedding=False
+    )
     if not nodes:
         return {"memories": []}
     node_ids = {n.node_id for n in nodes}
     edges = store.get_edges_for_nodes(node_ids)
-    linked = {nid for nid, es in edges.items() if any(e.edge_type == EdgeType.ENTITY_LINK.value for e in es)}
+    linked = {
+        nid
+        for nid, es in edges.items()
+        if any(e.edge_type == EdgeType.ENTITY_LINK.value for e in es)
+    }
     unlinked = [n for n in nodes if n.node_id not in linked]
 
     # Include existing entity nodes so caller knows what types are already linked
-    entity_nodes = store.get_user_nodes(user_id, node_type=NodeType.ENTITY, active_only=True, load_embedding=False)
+    entity_nodes = store.get_user_nodes(
+        user_id, node_type=NodeType.ENTITY, active_only=True, load_embedding=False
+    )
     return {
-        "memories": [{"memory_id": n.memory_id or n.node_id, "content": n.content} for n in unlinked[:50]],
-        "existing_entities": [{"name": n.content, "entity_type": n.entity_type} for n in entity_nodes],
+        "memories": [
+            {"memory_id": n.memory_id or n.node_id, "content": n.content}
+            for n in unlinked[:50]
+        ],
+        "existing_entities": [
+            {"name": n.content, "entity_type": n.entity_type} for n in entity_nodes
+        ],
     }
 
 
@@ -151,12 +193,22 @@ def list_entities(
     """List all entity nodes for the current user."""
     from memoria.core.memory.graph.graph_store import GraphStore
     from memoria.core.memory.graph.types import NodeType
+
     store = GraphStore(db_factory)
-    nodes = store.get_user_nodes(user_id, node_type=NodeType.ENTITY, active_only=True, load_embedding=False)
-    return {"entities": [
-        {"node_id": n.node_id, "name": n.content, "entity_type": n.entity_type, "importance": round(n.importance, 2)}
-        for n in nodes
-    ]}
+    nodes = store.get_user_nodes(
+        user_id, node_type=NodeType.ENTITY, active_only=True, load_embedding=False
+    )
+    return {
+        "entities": [
+            {
+                "node_id": n.node_id,
+                "name": n.content,
+                "entity_type": n.entity_type,
+                "importance": round(n.importance, 2),
+            }
+            for n in nodes
+        ]
+    }
 
 
 @router.post("/extract-entities/link")
@@ -168,6 +220,7 @@ def link_entities(
     """Write entity nodes + edges from user-LLM extraction results."""
     from memoria.core.memory.graph.graph_store import GraphStore
     from memoria.core.memory.graph.types import GraphNodeData
+
     store = GraphStore(db_factory)
 
     # Resolve memory_ids → graph nodes, collect entities per node
@@ -191,7 +244,10 @@ def link_entities(
             entities_per_node[node.node_id] = ent_list
 
     created, pending_edges, reused = store.link_entities_batch(
-        user_id, nodes, entities_per_node, source="manual",
+        user_id,
+        nodes,
+        entities_per_node,
+        source="manual",
     )
     if pending_edges:
         store.add_edges_batch(pending_edges, user_id)
@@ -199,5 +255,7 @@ def link_entities(
         "entities_created": len(created),
         "entities_reused": reused,
         "edges_created": len(pending_edges),
-        "entities": [{"name": e.content, "entity_type": e.entity_type} for e in created],
+        "entities": [
+            {"name": e.content, "entity_type": e.entity_type} for e in created
+        ],
     }

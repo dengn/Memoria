@@ -77,7 +77,9 @@ def _to_row(node: GraphNodeData) -> dict:
     return {
         "node_id": node.node_id,
         "user_id": node.user_id,
-        "node_type": node.node_type.value if isinstance(node.node_type, NodeType) else node.node_type,
+        "node_type": node.node_type.value
+        if isinstance(node.node_type, NodeType)
+        else node.node_type,
         "content": node.content,
         "entity_type": node.entity_type,
         "embedding": node.embedding,
@@ -184,7 +186,9 @@ class GraphStore(DbConsumer):
         with self._db() as db:
             row = (
                 db.query(GraphNode)
-                .filter_by(user_id=user_id, node_type=NodeType.ENTITY.value, is_active=1)
+                .filter_by(
+                    user_id=user_id, node_type=NodeType.ENTITY.value, is_active=1
+                )
                 .filter(GraphNode.content == entity_name.lower())
                 .first()
             )
@@ -231,20 +235,26 @@ class GraphStore(DbConsumer):
                     else:
                         ent_node_id = _new_id()
                         ent_node = GraphNodeData(
-                            node_id=ent_node_id, user_id=user_id,
+                            node_id=ent_node_id,
+                            user_id=user_id,
                             node_type=NodeType.ENTITY,
                             content=canonical_name.lower(),
                             entity_type=etype,
-                            confidence=1.0, trust_tier="T1",
+                            confidence=1.0,
+                            trust_tier="T1",
                             importance=importance,
                         )
                         self.create_node(ent_node)
                         created.append(ent_node)
                     entity_cache[canonical_name] = ent_node_id
-                pending_edges.append((
-                    node.node_id, ent_node_id,
-                    EdgeType.ENTITY_LINK.value, weight,
-                ))
+                pending_edges.append(
+                    (
+                        node.node_id,
+                        ent_node_id,
+                        EdgeType.ENTITY_LINK.value,
+                        weight,
+                    )
+                )
 
         return created, pending_edges, reused
 
@@ -266,8 +276,12 @@ class GraphStore(DbConsumer):
     # ── Vector Search ─────────────────────────────────────────────────
 
     def find_similar_nodes(
-        self, user_id: str, embedding: list[float],
-        *, top_k: int = 5, node_type: NodeType | None = None,
+        self,
+        user_id: str,
+        embedding: list[float],
+        *,
+        top_k: int = 5,
+        node_type: NodeType | None = None,
     ) -> list[GraphNodeData]:
         from matrixone.sqlalchemy_ext import l2_distance
 
@@ -283,8 +297,12 @@ class GraphStore(DbConsumer):
             return [_to_domain(r) for r in q.order_by(dist).limit(top_k).all()]
 
     def find_similar_with_scores(
-        self, user_id: str, embedding: list[float],
-        *, top_k: int = 5, node_type: NodeType | None = None,
+        self,
+        user_id: str,
+        embedding: list[float],
+        *,
+        top_k: int = 5,
+        node_type: NodeType | None = None,
     ) -> list[tuple[GraphNodeData, float]]:
         """Top-K nodes with cosine similarity (DB-side)."""
         from matrixone.sqlalchemy_ext import cosine_distance
@@ -321,7 +339,8 @@ class GraphStore(DbConsumer):
             return float(result.sim) if result else None
 
     def get_pairs_similarity_batch(
-        self, pairs: list[tuple[str, str]],
+        self,
+        pairs: list[tuple[str, str]],
     ) -> dict[tuple[str, str], float]:
         """Cosine similarity for multiple node pairs — DB-side computation.
 
@@ -351,15 +370,15 @@ class GraphStore(DbConsumer):
                 .all()
             )
         return {
-            (r.a_id, r.b_id): float(r.sim)
-            for r in rows
-            if (r.a_id, r.b_id) in pair_set
+            (r.a_id, r.b_id): float(r.sim) for r in rows if (r.a_id, r.b_id) in pair_set
         }
 
     # ── Edge Operations (normalized table) ────────────────────────────
 
     def add_edges_batch(
-        self, edges: list[tuple[str, str, str, float]], user_id: str,
+        self,
+        edges: list[tuple[str, str, str, float]],
+        user_id: str,
     ) -> None:
         """Insert edges, ignoring duplicates (composite PK).
 
@@ -369,6 +388,7 @@ class GraphStore(DbConsumer):
             return
         with self._db() as db:
             from sqlalchemy import text as sa_text
+
             # Build multi-value INSERT to avoid N round-trips.
             # ON DUPLICATE KEY UPDATE handles composite-PK conflicts.
             placeholders = ", ".join(
@@ -419,7 +439,8 @@ class GraphStore(DbConsumer):
             return result
 
     def get_edges_bidirectional(
-        self, node_ids: set[str],
+        self,
+        node_ids: set[str],
     ) -> tuple[dict[str, list[Edge]], dict[str, list[Edge]]]:
         """Batch: incoming AND outgoing edges for a set of nodes.
 
@@ -432,26 +453,16 @@ class GraphStore(DbConsumer):
         with self._db() as db:
             # Query 1: outgoing (uses PK: source_id leading column)
             out_rows = (
-                db.query(GraphEdge)
-                .filter(GraphEdge.source_id.in_(id_list))
-                .all()
+                db.query(GraphEdge).filter(GraphEdge.source_id.in_(id_list)).all()
             )
             # Query 2: incoming (uses idx_edge_target)
-            in_rows = (
-                db.query(GraphEdge)
-                .filter(GraphEdge.target_id.in_(id_list))
-                .all()
-            )
+            in_rows = db.query(GraphEdge).filter(GraphEdge.target_id.in_(id_list)).all()
             incoming: dict[str, list[Edge]] = {nid: [] for nid in node_ids}
             outgoing: dict[str, list[Edge]] = {nid: [] for nid in node_ids}
             for r in out_rows:
-                outgoing[r.source_id].append(
-                    Edge(r.target_id, r.edge_type, r.weight)
-                )
+                outgoing[r.source_id].append(Edge(r.target_id, r.edge_type, r.weight))
             for r in in_rows:
-                incoming[r.target_id].append(
-                    Edge(r.source_id, r.edge_type, r.weight)
-                )
+                incoming[r.target_id].append(Edge(r.source_id, r.edge_type, r.weight))
             return incoming, outgoing
 
     def get_incoming_for_nodes(self, node_ids: set[str]) -> dict[str, list[Edge]]:
@@ -490,7 +501,9 @@ class GraphStore(DbConsumer):
         with self._db() as db:
             return db.query(GraphEdge).filter_by(user_id=user_id).count()
 
-    def get_association_edges(self, user_id: str, min_weight: float = 0.0) -> list[tuple[str, str, float]]:
+    def get_association_edges(
+        self, user_id: str, min_weight: float = 0.0
+    ) -> list[tuple[str, str, float]]:
         """All association edges for a user. For consolidation conflict scan."""
         with self._db() as db:
             rows = (
@@ -546,7 +559,9 @@ class GraphStore(DbConsumer):
 
     # ── Node Update ───────────────────────────────────────────────────
 
-    def deactivate_node(self, node_id: str, *, superseded_by: str | None = None) -> None:
+    def deactivate_node(
+        self, node_id: str, *, superseded_by: str | None = None
+    ) -> None:
         with self._db() as db:
             updates: dict = {"is_active": 0}
             if superseded_by:
@@ -556,48 +571,70 @@ class GraphStore(DbConsumer):
 
     def update_importance(self, node_id: str, importance: float) -> None:
         with self._db() as db:
-            db.query(GraphNode).filter_by(node_id=node_id).update({"importance": importance})
+            db.query(GraphNode).filter_by(node_id=node_id).update(
+                {"importance": importance}
+            )
             db.commit()
 
     def update_confidence(self, node_id: str, confidence: float) -> None:
         with self._db() as db:
-            db.query(GraphNode).filter_by(node_id=node_id).update({"confidence": confidence})
+            db.query(GraphNode).filter_by(node_id=node_id).update(
+                {"confidence": confidence}
+            )
             db.commit()
 
     def update_confidence_and_tier(
-        self, node_id: str, confidence: float, trust_tier: str,
+        self,
+        node_id: str,
+        confidence: float,
+        trust_tier: str,
     ) -> None:
         with self._db() as db:
-            db.query(GraphNode).filter_by(node_id=node_id).update({
-                "confidence": confidence, "trust_tier": trust_tier,
-            })
+            db.query(GraphNode).filter_by(node_id=node_id).update(
+                {
+                    "confidence": confidence,
+                    "trust_tier": trust_tier,
+                }
+            )
             db.commit()
 
     def mark_conflict(
-        self, older_id: str, newer_id: str,
-        *, confidence_factor: float = 0.5, old_confidence: float = 0.75,
+        self,
+        older_id: str,
+        newer_id: str,
+        *,
+        confidence_factor: float = 0.5,
+        old_confidence: float = 0.75,
     ) -> None:
         """Atomic conflict marking — single transaction."""
         with self._db() as db:
-            db.query(GraphNode).filter_by(node_id=older_id).update({
-                "confidence": old_confidence * confidence_factor,
-                "conflicts_with": newer_id,
-                "conflict_resolution": "superseded",
-            })
-            db.query(GraphNode).filter_by(node_id=newer_id).update({
-                "conflict_resolution": "kept",
-            })
+            db.query(GraphNode).filter_by(node_id=older_id).update(
+                {
+                    "confidence": old_confidence * confidence_factor,
+                    "conflicts_with": newer_id,
+                    "conflict_resolution": "superseded",
+                }
+            )
+            db.query(GraphNode).filter_by(node_id=newer_id).update(
+                {
+                    "conflict_resolution": "kept",
+                }
+            )
             db.commit()
 
     # ── Session-level queries ─────────────────────────────────────────
 
-    def get_latest_episodic_in_session(self, user_id: str, session_id: str) -> GraphNodeData | None:
+    def get_latest_episodic_in_session(
+        self, user_id: str, session_id: str
+    ) -> GraphNodeData | None:
         with self._db() as db:
             row = (
                 db.query(GraphNode)
                 .filter_by(
-                    user_id=user_id, session_id=session_id,
-                    node_type=NodeType.EPISODIC.value, is_active=1,
+                    user_id=user_id,
+                    session_id=session_id,
+                    node_type=NodeType.EPISODIC.value,
+                    is_active=1,
                 )
                 .order_by(GraphNode.created_at.desc())
                 .first()
@@ -608,10 +645,13 @@ class GraphStore(DbConsumer):
         """Remove all graph nodes and edges for a user."""
         with self._db() as db:
             from sqlalchemy import text as sa_text
-            db.execute(sa_text(
-                "DELETE FROM memory_graph_edges WHERE user_id = :uid"
-            ), {"uid": user_id})
-            db.execute(sa_text(
-                "DELETE FROM memory_graph_nodes WHERE user_id = :uid"
-            ), {"uid": user_id})
+
+            db.execute(
+                sa_text("DELETE FROM memory_graph_edges WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+            db.execute(
+                sa_text("DELETE FROM memory_graph_nodes WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
             db.commit()

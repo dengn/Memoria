@@ -30,19 +30,32 @@ def db_engine():
     db_name = os.environ.get("MEMORIA_DB_NAME", "memoria_test")
 
     # Bootstrap: create DB if not exists
-    bootstrap = MoClient(host=host, port=port, user=user, password=password,
-                         database="mo_catalog", sql_log_mode="off")
+    bootstrap = MoClient(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database="mo_catalog",
+        sql_log_mode="off",
+    )
     with bootstrap._engine.connect() as c:
         c.execute(text(f"CREATE DATABASE IF NOT EXISTS `{db_name}`"))
         c.execute(text("COMMIT"))
     bootstrap._engine.dispose()
 
-    client = MoClient(host=host, port=port, user=user, password=password,
-                      database=db_name, sql_log_mode="off")
+    client = MoClient(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database=db_name,
+        sql_log_mode="off",
+    )
     engine = client._engine
 
     # Create tables
     from memoria.schema import ensure_tables
+
     ensure_tables(engine, dim=384)
 
     yield engine
@@ -69,6 +82,7 @@ def db(db_factory):
 def embed_client():
     """Embedding client for tests."""
     from memoria.core.embedding import EmbeddingClient, set_embedding_client
+
     client = EmbeddingClient(provider="local", model="all-MiniLM-L6-v2", dim=384)
     set_embedding_client(client)
     return client

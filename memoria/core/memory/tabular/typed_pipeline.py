@@ -17,7 +17,11 @@ from typing import Any, Optional
 
 from memoria.core.db_consumer import DbFactory
 from memoria.core.memory.config import MemoryGovernanceConfig, DEFAULT_CONFIG
-from memoria.core.memory.tabular.explain import ObserverStats, SandboxStats, PipelineStats
+from memoria.core.memory.tabular.explain import (
+    ObserverStats,
+    SandboxStats,
+    PipelineStats,
+)
 from memoria.core.memory.tabular.metrics import MemoryMetrics
 from memoria.core.memory.tabular.store import MemoryStore
 from memoria.core.memory.tabular.typed_observer import TypedObserver

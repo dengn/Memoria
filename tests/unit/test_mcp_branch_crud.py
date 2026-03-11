@@ -11,6 +11,7 @@ import pytest
 # Shared fixture
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def backend():
     """EmbeddedBackend instance with __init__ bypassed and all deps mocked."""
@@ -55,6 +56,7 @@ def _db_ctx(backend, fetchone_return=None, fetchall_return=None):
 # ---------------------------------------------------------------------------
 # _get_active_branch / _set_active_branch
 # ---------------------------------------------------------------------------
+
 
 class TestActiveBranch:
     """Test _get/_set_active_branch with DB persistence."""
@@ -137,6 +139,7 @@ class TestActiveBranch:
 # _branch_db_factory
 # ---------------------------------------------------------------------------
 
+
 class TestBranchDbFactory:
     """Test _branch_db_factory returns correct factory and caches it."""
 
@@ -166,8 +169,10 @@ class TestBranchDbFactory:
         mock_url.set.return_value = mock_url  # set() returns a new URL object
         backend._source_engine_url = MagicMock(return_value=mock_url)
 
-        with patch("memoria.mcp_local.server.create_engine") as mock_engine, \
-             patch("memoria.mcp_local.server.sessionmaker") as mock_sm:
+        with (
+            patch("memoria.mcp_local.server.create_engine") as mock_engine,
+            patch("memoria.mcp_local.server.sessionmaker") as mock_sm,
+        ):
             result = backend._branch_db_factory("alice")
 
         # URL.set called with the branch database name
@@ -178,7 +183,10 @@ class TestBranchDbFactory:
     def test_cache_hit_skips_db_lookup(self, backend):
         backend._active_branches["alice"] = "exp"
         sentinel_factory = MagicMock(name="cached_factory")
-        backend._branch_factory_cache[("alice", "exp")] = (MagicMock(), sentinel_factory)
+        backend._branch_factory_cache[("alice", "exp")] = (
+            MagicMock(),
+            sentinel_factory,
+        )
 
         result = backend._branch_db_factory("alice")
 
@@ -195,8 +203,10 @@ class TestBranchDbFactory:
         mock_url.set.return_value = mock_url
         backend._source_engine_url = MagicMock(return_value=mock_url)
 
-        with patch("memoria.mcp_local.server.create_engine") as mock_ce, \
-             patch("memoria.mcp_local.server.sessionmaker") as mock_sm:
+        with (
+            patch("memoria.mcp_local.server.create_engine") as mock_ce,
+            patch("memoria.mcp_local.server.sessionmaker") as mock_sm,
+        ):
             result = backend._branch_db_factory("alice")
 
         # Cache stores (engine, factory) tuple; result is the factory
@@ -214,8 +224,10 @@ class TestBranchDbFactory:
         mock_url.set.return_value = mock_url
         backend._source_engine_url = MagicMock(return_value=mock_url)
 
-        with patch("memoria.mcp_local.server.create_engine"), \
-             patch("memoria.mcp_local.server.sessionmaker"):
+        with (
+            patch("memoria.mcp_local.server.create_engine"),
+            patch("memoria.mcp_local.server.sessionmaker"),
+        ):
             backend._branch_db_factory("alice")
             backend._branch_db_factory("alice")
 
@@ -226,6 +238,7 @@ class TestBranchDbFactory:
 # ---------------------------------------------------------------------------
 # _source_engine_url
 # ---------------------------------------------------------------------------
+
 
 class TestSourceEngineUrl:
     """Test _source_engine_url for both init modes."""
@@ -242,6 +255,7 @@ class TestSourceEngineUrl:
 # ---------------------------------------------------------------------------
 # store — branch field in return value
 # ---------------------------------------------------------------------------
+
 
 class TestBranchAwareStore:
     """store() must include the active branch name in its return value."""
@@ -261,7 +275,10 @@ class TestBranchAwareStore:
         """When user is on a non-main branch, store() must report that branch."""
         backend._active_branches["alice"] = "experiment"
         # Inject a cached (engine, factory) so _branch_db_factory doesn't hit DB
-        backend._branch_factory_cache[("alice", "experiment")] = (MagicMock(), backend._db_factory)
+        backend._branch_factory_cache[("alice", "experiment")] = (
+            MagicMock(),
+            backend._db_factory,
+        )
         mock_mem = MagicMock()
         mock_mem.memory_id = "m2"
         mock_mem.content = "hello"
@@ -277,6 +294,7 @@ class TestBranchAwareStore:
 # Lazy embedding client
 # ---------------------------------------------------------------------------
 
+
 class TestLazyEmbedClient:
     """_get_embed_client() must initialize once and cache the result."""
 
@@ -289,7 +307,9 @@ class TestLazyEmbedClient:
         """First _get_embed_client() call triggers _make_embed_client() in standalone mode."""
         backend._embed_client_standalone = True
         mock_client = MagicMock()
-        with patch.object(type(backend), "_make_embed_client", return_value=mock_client):
+        with patch.object(
+            type(backend), "_make_embed_client", return_value=mock_client
+        ):
             result = backend._get_embed_client()
         assert result is mock_client
         assert backend._embed_client is mock_client
@@ -299,7 +319,9 @@ class TestLazyEmbedClient:
         """Subsequent calls return cached client without calling _make_embed_client again."""
         backend._embed_client_standalone = True
         mock_client = MagicMock()
-        with patch.object(type(backend), "_make_embed_client", return_value=mock_client) as mock_make:
+        with patch.object(
+            type(backend), "_make_embed_client", return_value=mock_client
+        ) as mock_make:
             backend._get_embed_client()
             backend._get_embed_client()
         mock_make.assert_called_once()
@@ -321,7 +343,9 @@ class TestLazyEmbedClient:
         backend._create_editor.return_value.inject.return_value = mock_mem
         mock_client = MagicMock()
 
-        with patch.object(backend, "_get_embed_client", return_value=mock_client) as mock_get:
+        with patch.object(
+            backend, "_get_embed_client", return_value=mock_client
+        ) as mock_get:
             backend.store("u", "hi", "semantic", None)
 
         mock_get.assert_called_once()

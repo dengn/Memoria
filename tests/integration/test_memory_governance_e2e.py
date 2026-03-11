@@ -25,7 +25,9 @@ def _sid():
 
 @pytest.fixture
 def db_factory():
-    from tests.integration.conftest import _get_session_local; SessionLocal = _get_session_local()
+    from tests.integration.conftest import _get_session_local
+
+    SessionLocal = _get_session_local()
     return SessionLocal
 
 
@@ -35,9 +37,13 @@ def cleanup(db_factory):
     yield ids
     if ids:
         from sqlalchemy import text
+
         db = db_factory()
         try:
-            db.execute(text("DELETE FROM mem_memories WHERE memory_id IN :ids"), {"ids": tuple(ids)})
+            db.execute(
+                text("DELETE FROM mem_memories WHERE memory_id IN :ids"),
+                {"ids": tuple(ids)},
+            )
             db.commit()
         finally:
             db.close()
@@ -52,8 +58,11 @@ class TestHourlyGovernance:
 
         # Create working memory observed 4 hours ago (margin for TIMESTAMPDIFF truncation)
         mem = Memory(
-            memory_id=str(uuid7()), user_id=user_id, session_id=session_id,
-            memory_type=MemoryType.WORKING, content="Current plan: refactor auth",
+            memory_id=str(uuid7()),
+            user_id=user_id,
+            session_id=session_id,
+            memory_type=MemoryType.WORKING,
+            content="Current plan: refactor auth",
             initial_confidence=0.9,
             observed_at=datetime.now(timezone.utc) - timedelta(hours=4),
         )
@@ -63,7 +72,9 @@ class TestHourlyGovernance:
         # Verify active before governance
         assert store.get(mem.memory_id).is_active is True
 
-        config = MemoryGovernanceConfig(working_memory_stale_hours=2, tool_result_ttl_hours=999)
+        config = MemoryGovernanceConfig(
+            working_memory_stale_hours=2, tool_result_ttl_hours=999
+        )
         scheduler = GovernanceScheduler(db_factory, config=config)
         result = scheduler.run_hourly()
 
@@ -77,8 +88,10 @@ class TestHourlyGovernance:
         user_id = _uid()
 
         mem = Memory(
-            memory_id=str(uuid7()), user_id=user_id,
-            memory_type=MemoryType.TOOL_RESULT, content="grep output: 42 matches",
+            memory_id=str(uuid7()),
+            user_id=user_id,
+            memory_type=MemoryType.TOOL_RESULT,
+            content="grep output: 42 matches",
             initial_confidence=0.5,
             observed_at=datetime.now(timezone.utc) - timedelta(hours=26),
         )
@@ -105,9 +118,12 @@ class TestDailyGovernance:
 
         # T4 memory (30d half-life), 90 days old → effective ≈ 0.05
         mem = Memory(
-            memory_id=str(uuid7()), user_id=user_id,
-            memory_type=MemoryType.SEMANTIC, content="Old unverified fact",
-            initial_confidence=0.5, trust_tier=TrustTier.T4_UNVERIFIED,
+            memory_id=str(uuid7()),
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            content="Old unverified fact",
+            initial_confidence=0.5,
+            trust_tier=TrustTier.T4_UNVERIFIED,
             observed_at=datetime.now(timezone.utc) - timedelta(days=90),
         )
         cleanup.append(mem.memory_id)
@@ -128,8 +144,10 @@ class TestDailyGovernance:
         user_id = _uid()
 
         mem = Memory(
-            memory_id=str(uuid7()), user_id=user_id,
-            memory_type=MemoryType.SEMANTIC, content="Superseded fact",
+            memory_id=str(uuid7()),
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            content="Superseded fact",
             initial_confidence=0.05,
             observed_at=datetime.now(timezone.utc) - timedelta(days=30),
         )
@@ -151,15 +169,21 @@ class TestTrustTierAffectsQuarantine:
         age = datetime.now(timezone.utc) - timedelta(days=60)
 
         t1 = Memory(
-            memory_id=str(uuid7()), user_id=user_id,
-            memory_type=MemoryType.SEMANTIC, content="Verified API docs",
-            initial_confidence=0.9, trust_tier=TrustTier.T1_VERIFIED,
+            memory_id=str(uuid7()),
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            content="Verified API docs",
+            initial_confidence=0.9,
+            trust_tier=TrustTier.T1_VERIFIED,
             observed_at=age,
         )
         t4 = Memory(
-            memory_id=str(uuid7()), user_id=user_id,
-            memory_type=MemoryType.SEMANTIC, content="Unverified user claim",
-            initial_confidence=0.5, trust_tier=TrustTier.T4_UNVERIFIED,
+            memory_id=str(uuid7()),
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            content="Unverified user claim",
+            initial_confidence=0.5,
+            trust_tier=TrustTier.T4_UNVERIFIED,
             observed_at=age,
         )
         cleanup.extend([t1.memory_id, t4.memory_id])
@@ -183,8 +207,10 @@ class TestFullCycle:
         user_id = _uid()
 
         mem = Memory(
-            memory_id=str(uuid7()), user_id=user_id,
-            memory_type=MemoryType.SEMANTIC, content="Test memory",
+            memory_id=str(uuid7()),
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            content="Test memory",
             initial_confidence=0.8,
             observed_at=datetime.now(timezone.utc),
         )

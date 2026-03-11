@@ -20,15 +20,18 @@ os.environ["MEMORIA_MASTER_KEY"] = MASTER_KEY
 @pytest.fixture(scope="module")
 def client():
     from memoria.api.main import app
+
     with TestClient(app) as c:
         yield c
     from memoria.api.middleware import _windows
+
     _windows.clear()
 
 
 @pytest.fixture(scope="module")
 def db():
     from memoria.api.database import get_session_factory
+
     s = get_session_factory()()
     yield s
     s.close()
@@ -36,10 +39,14 @@ def db():
 
 def _make_user(client):
     from memoria.api.middleware import _windows
+
     _windows.clear()
     uid = f"mcp_{uuid.uuid4().hex[:8]}"
-    r = client.post("/auth/keys", json={"user_id": uid, "name": "mcp-key"},
-                     headers={"Authorization": f"Bearer {MASTER_KEY}"})
+    r = client.post(
+        "/auth/keys",
+        json={"user_id": uid, "name": "mcp-key"},
+        headers={"Authorization": f"Bearer {MASTER_KEY}"},
+    )
     assert r.status_code == 201
     return uid, r.json()["raw_key"]
 
@@ -51,6 +58,7 @@ def user_and_key(client):
 
 class _HttpShim:
     """Mimics httpx.Client but delegates to FastAPI TestClient."""
+
     def __init__(self, test_client, api_key):
         self._c = test_client
         self._h = {"Authorization": f"Bearer {api_key}"}
@@ -76,8 +84,12 @@ def http(client, user_and_key):
 
 # ── Tool wrappers (sync, mirrors mcp/server.py logic exactly) ─────────
 
+
 def _store(http, content, memory_type="semantic", session_id=None):
-    r = http.post("/v1/memories", json={"content": content, "memory_type": memory_type, "session_id": session_id})
+    r = http.post(
+        "/v1/memories",
+        json={"content": content, "memory_type": memory_type, "session_id": session_id},
+    )
     r.raise_for_status()
     d = r.json()
     return f"Stored memory {d['memory_id']}: {d['content'][:80]}"
@@ -98,11 +110,16 @@ def _search(http, query, top_k=10):
     items = r.json()
     if not items:
         return "No memories found."
-    return "\n".join(f"- [{m['memory_id']}] [{m['memory_type']}] {m['content']}" for m in items)
+    return "\n".join(
+        f"- [{m['memory_id']}] [{m['memory_type']}] {m['content']}" for m in items
+    )
 
 
 def _correct(http, memory_id, new_content, reason=""):
-    r = http.put(f"/v1/memories/{memory_id}/correct", json={"new_content": new_content, "reason": reason})
+    r = http.put(
+        f"/v1/memories/{memory_id}/correct",
+        json={"new_content": new_content, "reason": reason},
+    )
     r.raise_for_status()
     d = r.json()
     return f"Corrected memory {d['memory_id']}: {d['content'][:80]}"
@@ -155,6 +172,7 @@ def _extract_mid(store_result: str) -> str:
 
 # ── Tests ─────────────────────────────────────────────────────────────
 
+
 class TestMCPStore:
     def test_store_returns_memory_id(self, http):
         result = _store(http, "MCP test fact")
@@ -164,17 +182,23 @@ class TestMCPStore:
     def test_store_persists_to_db(self, http, db, user_and_key):
         uid, _ = user_and_key
         _store(http, "mcp_db_check_unique_content")
-        row = db.execute(text(
-            "SELECT content FROM mem_memories WHERE user_id = :uid AND content = 'mcp_db_check_unique_content' AND is_active"
-        ), {"uid": uid}).first()
+        row = db.execute(
+            text(
+                "SELECT content FROM mem_memories WHERE user_id = :uid AND content = 'mcp_db_check_unique_content' AND is_active"
+            ),
+            {"uid": uid},
+        ).first()
         assert row is not None
 
     def test_store_with_type(self, http, db, user_and_key):
         uid, _ = user_and_key
         _store(http, "procedural mcp test", memory_type="procedural")
-        row = db.execute(text(
-            "SELECT memory_type FROM mem_memories WHERE user_id = :uid AND content = 'procedural mcp test' AND is_active"
-        ), {"uid": uid}).first()
+        row = db.execute(
+            text(
+                "SELECT memory_type FROM mem_memories WHERE user_id = :uid AND content = 'procedural mcp test' AND is_active"
+            ),
+            {"uid": uid},
+        ).first()
         assert row is not None
         assert "procedural" in str(row[0])
 
@@ -213,14 +237,18 @@ class TestMCPCorrect:
         assert "new corrected content" in corrected
 
         # DB: old deactivated, new active
-        old = db.execute(text(
-            "SELECT is_active FROM mem_memories WHERE memory_id = :mid"
-        ), {"mid": mid}).first()
+        old = db.execute(
+            text("SELECT is_active FROM mem_memories WHERE memory_id = :mid"),
+            {"mid": mid},
+        ).first()
         assert old[0] == 0
 
-        new = db.execute(text(
-            "SELECT content FROM mem_memories WHERE user_id = :uid AND content = 'new corrected content' AND is_active"
-        ), {"uid": uid}).first()
+        new = db.execute(
+            text(
+                "SELECT content FROM mem_memories WHERE user_id = :uid AND content = 'new corrected content' AND is_active"
+            ),
+            {"uid": uid},
+        ).first()
         assert new is not None
 
 
@@ -230,9 +258,10 @@ class TestMCPPurge:
         result = _purge(http, mid)
         assert "Purged" in result
 
-        row = db.execute(text(
-            "SELECT is_active FROM mem_memories WHERE memory_id = :mid"
-        ), {"mid": mid}).first()
+        row = db.execute(
+            text("SELECT is_active FROM mem_memories WHERE memory_id = :mid"),
+            {"mid": mid},
+        ).first()
         assert row[0] == 0
 
 
@@ -257,9 +286,12 @@ class TestMCPSnapshot:
         listing = _snapshots(http)
         assert name in listing
 
-        row = db.execute(text(
-            "SELECT display_name FROM mem_snapshot_registry WHERE user_id = :uid AND display_name = :name"
-        ), {"uid": uid, "name": name}).first()
+        row = db.execute(
+            text(
+                "SELECT display_name FROM mem_snapshot_registry WHERE user_id = :uid AND display_name = :name"
+            ),
+            {"uid": uid, "name": name},
+        ).first()
         assert row is not None
 
 
@@ -285,9 +317,10 @@ class TestMCPFullChain:
         mid = _extract_mid(_store(http, "MCP lifecycle test original"))
 
         # 2. Verify in DB
-        row = db.execute(text(
-            "SELECT content, is_active FROM mem_memories WHERE memory_id = :mid"
-        ), {"mid": mid}).first()
+        row = db.execute(
+            text("SELECT content, is_active FROM mem_memories WHERE memory_id = :mid"),
+            {"mid": mid},
+        ).first()
         assert row[0] == "MCP lifecycle test original"
         assert row[1] == 1
 
@@ -295,16 +328,20 @@ class TestMCPFullChain:
         _correct(http, mid, "MCP lifecycle test corrected")
 
         # 4. Old deactivated
-        row = db.execute(text(
-            "SELECT is_active FROM mem_memories WHERE memory_id = :mid"
-        ), {"mid": mid}).first()
+        row = db.execute(
+            text("SELECT is_active FROM mem_memories WHERE memory_id = :mid"),
+            {"mid": mid},
+        ).first()
         assert row[0] == 0
 
         # 5. New exists
-        new = db.execute(text(
-            "SELECT memory_id, is_active FROM mem_memories "
-            "WHERE user_id = :uid AND content = 'MCP lifecycle test corrected' AND is_active"
-        ), {"uid": uid}).first()
+        new = db.execute(
+            text(
+                "SELECT memory_id, is_active FROM mem_memories "
+                "WHERE user_id = :uid AND content = 'MCP lifecycle test corrected' AND is_active"
+            ),
+            {"uid": uid},
+        ).first()
         assert new is not None
         new_mid = new[0]
 
@@ -312,15 +349,17 @@ class TestMCPFullChain:
         _purge(http, new_mid)
 
         # 7. Verify gone
-        row = db.execute(text(
-            "SELECT is_active FROM mem_memories WHERE memory_id = :mid"
-        ), {"mid": new_mid}).first()
+        row = db.execute(
+            text("SELECT is_active FROM mem_memories WHERE memory_id = :mid"),
+            {"mid": new_mid},
+        ).first()
         assert row[0] == 0
 
 
 class TestMCPSnapshotDiff:
     def test_diff_via_mcp(self, http, user_and_key):
         import time
+
         uid, _ = user_and_key
         _store(http, "diff base 1")
         _store(http, "diff base 2")

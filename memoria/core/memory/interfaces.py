@@ -12,7 +12,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from memoria.core.memory.types import Memory, MemoryType, RetrievalWeights, TrustTier
+    from memoria.core.memory.types import (
+        Memory,
+        MemoryType,
+        RetrievalWeights,
+        TrustTier,
+    )
 
 
 @runtime_checkable
@@ -102,7 +107,10 @@ class CandidateProvider(Protocol):
     """Each backend implements this to feed the shared ReflectionEngine."""
 
     def get_reflection_candidates(
-        self, user_id: str, *, since_hours: int = 24,
+        self,
+        user_id: str,
+        *,
+        since_hours: int = 24,
     ) -> list[ReflectionCandidate]:
         """Return candidate clusters for reflection."""
         ...

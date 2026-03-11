@@ -18,10 +18,19 @@ def system_stats(
 ):
     """System-wide stats. Uses indexed COUNT for bounded tables, approximate for large ones."""
     from memoria.core.memory.models.memory import MemoryRecord as M
-    total_users = db.query(func.count(User.user_id)).filter(User.is_active == 1).scalar() or 0
-    total_memories = db.query(func.count(M.memory_id)).filter(M.is_active > 0).scalar() or 0
+
+    total_users = (
+        db.query(func.count(User.user_id)).filter(User.is_active == 1).scalar() or 0
+    )
+    total_memories = (
+        db.query(func.count(M.memory_id)).filter(M.is_active > 0).scalar() or 0
+    )
     total_snapshots = db.query(func.count(SnapshotRegistry.snapshot_name)).scalar() or 0
-    return {"total_users": total_users, "total_memories": total_memories, "total_snapshots": total_snapshots}
+    return {
+        "total_users": total_users,
+        "total_memories": total_memories,
+        "total_snapshots": total_snapshots,
+    }
 
 
 @router.get("/admin/users")
@@ -38,7 +47,13 @@ def list_users(
     rows = q.order_by(User.user_id).limit(limit).all()
     next_cursor = rows[-1].user_id if len(rows) == limit else None
     return {
-        "users": [{"user_id": r.user_id, "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows],
+        "users": [
+            {
+                "user_id": r.user_id,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
         "next_cursor": next_cursor,
     }
 
@@ -50,10 +65,21 @@ def user_stats(
     db: Session = Depends(get_db_session),
 ):
     from memoria.core.memory.models.memory import MemoryRecord as M
-    mem_count = db.query(func.count(M.memory_id)).filter(M.user_id == user_id, M.is_active > 0).scalar() or 0
+
+    mem_count = (
+        db.query(func.count(M.memory_id))
+        .filter(M.user_id == user_id, M.is_active > 0)
+        .scalar()
+        or 0
+    )
     snap_count = db.query(SnapshotRegistry).filter_by(user_id=user_id).count()
     key_count = db.query(ApiKey).filter_by(user_id=user_id, is_active=1).count()
-    return {"user_id": user_id, "memory_count": mem_count, "snapshot_count": snap_count, "api_key_count": key_count}
+    return {
+        "user_id": user_id,
+        "memory_count": mem_count,
+        "snapshot_count": snap_count,
+        "api_key_count": key_count,
+    }
 
 
 @router.delete("/admin/users/{user_id}")
@@ -81,19 +107,33 @@ def admin_trigger_governance(
     """
     if op not in ("governance", "consolidate", "reflect"):
         from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="Invalid op. Must be governance/consolidate/reflect")
+
+        raise HTTPException(
+            status_code=400, detail="Invalid op. Must be governance/consolidate/reflect"
+        )
 
     from memoria.api.database import get_db_factory
+
     db_factory = get_db_factory()
 
     if op == "governance":
         from memoria.core.memory.tabular.governance import GovernanceScheduler
+
         r = GovernanceScheduler(db_factory).run_cycle(user_id)
-        return {"op": op, "user_id": user_id, "result": {"quarantined": r.quarantined, "cleaned_stale": r.cleaned_stale}}
+        return {
+            "op": op,
+            "user_id": user_id,
+            "result": {"quarantined": r.quarantined, "cleaned_stale": r.cleaned_stale},
+        }
     else:
         from memoria.core.memory.factory import create_memory_service
+
         svc = create_memory_service(db_factory, user_id=user_id)
         result = svc.consolidate(user_id) if op == "consolidate" else None
         if op == "reflect":
-            return {"op": op, "user_id": user_id, "result": "reflect requires LLM — use user endpoint"}
+            return {
+                "op": op,
+                "user_id": user_id,
+                "result": "reflect requires LLM — use user endpoint",
+            }
         return {"op": op, "user_id": user_id, "result": result}

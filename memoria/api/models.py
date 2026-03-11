@@ -57,6 +57,7 @@ class ApiKey(Base):
         """HMAC-SHA256 keyed with master key. Falls back to bare SHA-256 if no master key."""
         import hmac as _hmac
         from memoria.config import get_settings
+
         mk = get_settings().master_key
         if mk:
             return _hmac.new(mk.encode(), raw.encode(), hashlib.sha256).hexdigest()

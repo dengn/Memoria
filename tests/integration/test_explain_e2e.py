@@ -1,13 +1,12 @@
 """End-to-end EXPLAIN ANALYZE test — verifies explain flows through entire call chain."""
 
 import json
+import os
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-
-import os; EMBEDDING_DIM = int(os.environ.get("MEMORIA_EMBEDDING_DIM", "384"))
 
 from memoria.core.memory.tabular.store import MemoryStore
 from memoria.core.memory.tabular.retriever import MemoryRetriever
@@ -16,6 +15,8 @@ from memoria.core.memory.tabular.typed_pipeline import run_typed_memory_pipeline
 from memoria.core.tiered_loader import TieredMemoryLoader
 from memoria.core.memory.tabular.service import MemoryService
 from memoria.core.memory.types import Memory, MemoryType
+
+EMBEDDING_DIM = int(os.environ.get("MEMORIA_EMBEDDING_DIM", "384"))
 
 
 def _uid():
@@ -33,7 +34,9 @@ class TestExplainE2E:
     @pytest.fixture
     def db_factory(self):
         """Real DB factory for integration tests."""
-        from tests.integration.conftest import _get_session_local; SessionLocal = _get_session_local()
+        from tests.integration.conftest import _get_session_local
+
+        SessionLocal = _get_session_local()
         return SessionLocal
 
     @pytest.fixture
@@ -43,11 +46,12 @@ class TestExplainE2E:
         yield memory_ids
         if memory_ids:
             from sqlalchemy import text
+
             db = db_factory()
             try:
                 db.execute(
                     text("DELETE FROM mem_memories WHERE memory_id IN :ids"),
-                    {"ids": tuple(memory_ids)}
+                    {"ids": tuple(memory_ids)},
                 )
                 db.commit()
             finally:
@@ -107,7 +111,9 @@ class TestExplainE2E:
         assert stats.total_ms > 0
         assert stats.vector_attempted  # Should have tried vector search
 
-    def test_observer_explain_shows_contradiction_check(self, db_factory, cleanup_memories):
+    def test_observer_explain_shows_contradiction_check(
+        self, db_factory, cleanup_memories
+    ):
         """Observer explain shows extraction and contradiction detection."""
         store = MemoryStore(db_factory)
         user_id = _uid()
@@ -162,10 +168,18 @@ class TestExplainE2E:
 
         # Mock LLM to return memories
         mock_llm = MagicMock()
-        mock_llm.chat_with_tools.return_value = {"content": json.dumps([
-            {"type": "profile", "content": "User likes Go", "confidence": 0.9},
-            {"type": "semantic", "content": "Discussed testing", "confidence": 0.7},
-        ])}
+        mock_llm.chat_with_tools.return_value = {
+            "content": json.dumps(
+                [
+                    {"type": "profile", "content": "User likes Go", "confidence": 0.9},
+                    {
+                        "type": "semantic",
+                        "content": "Discussed testing",
+                        "confidence": 0.7,
+                    },
+                ]
+            )
+        }
 
         result = run_typed_memory_pipeline(
             db_factory=db_factory,
@@ -179,11 +193,12 @@ class TestExplainE2E:
 
         # Cleanup created memories
         from sqlalchemy import text
+
         db = db_factory()
         try:
             rows = db.execute(
                 text("SELECT memory_id FROM mem_memories WHERE user_id = :uid"),
-                {"uid": user_id}
+                {"uid": user_id},
             ).fetchall()
             for row in rows:
                 cleanup_memories.append(row.memory_id)
@@ -195,15 +210,19 @@ class TestExplainE2E:
         print(f"  - memories_extracted: {result.memories_extracted}")
         print(f"  - memories_validated: {result.memories_validated}")
         print(f"  - memories_rejected: {result.memories_rejected}")
-        
+
         if result.stats:
             print("Stats:")
             print(f"  - total_ms: {result.stats.total_ms:.2f}ms")
             if result.stats.observer:
                 print("  Observer:")
-                print(f"    - memories_extracted: {result.stats.observer.memories_extracted}")
+                print(
+                    f"    - memories_extracted: {result.stats.observer.memories_extracted}"
+                )
                 print(f"    - memories_stored: {result.stats.observer.memories_stored}")
-                print(f"    - memories_superseded: {result.stats.observer.memories_superseded}")
+                print(
+                    f"    - memories_superseded: {result.stats.observer.memories_superseded}"
+                )
                 print(f"    - total_ms: {result.stats.observer.total_ms:.2f}ms")
             if result.stats.sandbox:
                 print("  Sandbox:")
@@ -312,5 +331,7 @@ class TestExplainE2E:
 
         # CRITICAL: This is how we verify no silent fallback
         assert stats.vector_attempted, "Vector search should have been attempted"
-        assert stats.vector_error is None, f"Vector search should not have errors: {stats.vector_error}"
+        assert stats.vector_error is None, (
+            f"Vector search should not have errors: {stats.vector_error}"
+        )
         # If vector_hit is False but no error, it means no results (not fallback)

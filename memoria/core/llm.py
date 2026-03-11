@@ -20,6 +20,7 @@ def get_llm_client() -> Any:
         return _client
 
     from memoria.config import get_settings
+
     s = get_settings()
     if not s.llm_api_key:
         return None
@@ -39,8 +40,11 @@ def get_llm_client() -> Any:
 class MinimalLLMClient:
     """Thin wrapper around OpenAI chat completions."""
 
-    def __init__(self, api_key: str, base_url: str | None = None, model: str = "gpt-4o-mini"):
+    def __init__(
+        self, api_key: str, base_url: str | None = None, model: str = "gpt-4o-mini"
+    ):
         import openai
+
         self._client = openai.OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
 

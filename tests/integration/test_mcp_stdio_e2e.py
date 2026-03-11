@@ -29,11 +29,10 @@ from typing import AsyncGenerator
 import pymysql
 import pytest
 import pytest_asyncio
-
-pytestmark = [pytest.mark.slow]  # e2e tests spawn subprocess per test
-
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+
+pytestmark = [pytest.mark.slow]  # e2e tests spawn subprocess per test
 
 # ── Config ────────────────────────────────────────────────────────────
 
@@ -63,6 +62,8 @@ def _server_env() -> dict[str, str]:
         "EMBEDDING_MODEL": os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3"),
         "EMBEDDING_DIM": os.environ.get("EMBEDDING_DIM", "1024"),
     }
+
+
 _DB_USER = "root"
 _DB_PASS = "111"
 _DB_NAME = "memoria_e2e_test"
@@ -80,8 +81,12 @@ def _user(suffix: str = "") -> str:
 
 def _db_conn():
     return pymysql.connect(
-        host=_DB_HOST, port=_DB_PORT, user=_DB_USER, password=_DB_PASS,
-        database=_DB_NAME, autocommit=True,
+        host=_DB_HOST,
+        port=_DB_PORT,
+        user=_DB_USER,
+        password=_DB_PASS,
+        database=_DB_NAME,
+        autocommit=True,
     )
 
 
@@ -112,7 +117,9 @@ def _db_cleanup(user_id_prefix: str) -> None:
         cur = conn.cursor()
         cur.execute(f"DELETE FROM mem_memories WHERE user_id LIKE '{user_id_prefix}%'")
         cur.execute(f"DELETE FROM mem_edit_log WHERE user_id LIKE '{user_id_prefix}%'")
-        cur.execute(f"DELETE FROM mem_user_state WHERE user_id LIKE '{user_id_prefix}%'")
+        cur.execute(
+            f"DELETE FROM mem_user_state WHERE user_id LIKE '{user_id_prefix}%'"
+        )
         conn.commit()
     finally:
         conn.close()
@@ -191,10 +198,21 @@ async def test_list_tools(session):
     tools = await session.list_tools()
     names = {t.name for t in tools.tools}
     expected = {
-        "memory_store", "memory_retrieve", "memory_correct", "memory_purge",
-        "memory_search", "memory_profile", "memory_snapshot", "memory_snapshots",
-        "memory_rollback", "memory_branch", "memory_branches", "memory_checkout",
-        "memory_merge", "memory_diff", "memory_branch_delete",
+        "memory_store",
+        "memory_retrieve",
+        "memory_correct",
+        "memory_purge",
+        "memory_search",
+        "memory_profile",
+        "memory_snapshot",
+        "memory_snapshots",
+        "memory_rollback",
+        "memory_branch",
+        "memory_branches",
+        "memory_checkout",
+        "memory_merge",
+        "memory_diff",
+        "memory_branch_delete",
     }
     assert expected.issubset(names), f"Missing tools: {expected - names}"
 
@@ -229,7 +247,9 @@ async def test_store_with_session_id(session):
     sess_id = f"sess_{uuid.uuid4().hex[:8]}"
     content = f"session-scoped fact {uuid.uuid4().hex}"
 
-    result = await _call(session, "memory_store", content=content, user_id=user, session_id=sess_id)
+    result = await _call(
+        session, "memory_store", content=content, user_id=user, session_id=sess_id
+    )
     mid = result.split("Stored memory ")[1].split(":")[0].strip()
 
     rows = _db_fetch("mem_memories", f"memory_id = '{mid}'")
@@ -240,7 +260,9 @@ async def test_store_with_session_id(session):
 async def test_retrieve_returns_stored(session):
     user = _user("main")
     keyword = f"kw_{uuid.uuid4().hex[:6]}"
-    await _call(session, "memory_store", content=f"memory about {keyword}", user_id=user)
+    await _call(
+        session, "memory_store", content=f"memory about {keyword}", user_id=user
+    )
 
     result = await _call(session, "memory_retrieve", query=keyword, user_id=user)
     assert keyword in result
@@ -250,12 +272,18 @@ async def test_retrieve_returns_stored(session):
 async def test_correct_updates_db(session):
     """correct() supersedes old memory (deactivate) and creates a new one."""
     user = _user("main")
-    result = await _call(session, "memory_store", content="original content", user_id=user)
+    result = await _call(
+        session, "memory_store", content="original content", user_id=user
+    )
     old_mid = result.split("Stored memory ")[1].split(":")[0].strip()
 
     correct_result = await _call(
-        session, "memory_correct",
-        memory_id=old_mid, new_content="corrected content", reason="test", user_id=user
+        session,
+        "memory_correct",
+        memory_id=old_mid,
+        new_content="corrected content",
+        reason="test",
+        user_id=user,
     )
     # Response: "Corrected → <new_id>: <content>"
     new_mid = correct_result.split("Corrected → ")[1].split(":")[0].strip()
@@ -291,22 +319,26 @@ async def test_purge_by_topic(session):
     user = _user("main")
     topic_kw = f"topic_{uuid.uuid4().hex[:6]}"
     for i in range(3):
-        await _call(session, "memory_store", content=f"{topic_kw} item {i}", user_id=user)
+        await _call(
+            session, "memory_store", content=f"{topic_kw} item {i}", user_id=user
+        )
     await _call(session, "memory_store", content="unrelated memory", user_id=user)
 
-    await _call(session, "memory_purge", topic=topic_kw, reason="bulk delete", user_id=user)
+    await _call(
+        session, "memory_purge", topic=topic_kw, reason="bulk delete", user_id=user
+    )
 
     # All topic memories should be deactivated
     active = _db_fetch(
         "mem_memories",
-        f"user_id = '{user}' AND content LIKE '%{topic_kw}%' AND is_active"
+        f"user_id = '{user}' AND content LIKE '%{topic_kw}%' AND is_active",
     )
     assert len(active) == 0, "All topic memories should be deactivated"
 
     # Unrelated memory should still be active
     unrelated = _db_fetch(
         "mem_memories",
-        f"user_id = '{user}' AND content = 'unrelated memory' AND is_active"
+        f"user_id = '{user}' AND content = 'unrelated memory' AND is_active",
     )
     assert len(unrelated) == 1
 
@@ -340,7 +372,13 @@ async def test_snapshot_create_list_rollback(session):
     snap_name = f"snap_{uuid.uuid4().hex[:6]}"
 
     await _call(session, "memory_store", content="before snapshot", user_id=user)
-    await _call(session, "memory_snapshot", name=snap_name, description="test snap", user_id=user)
+    await _call(
+        session,
+        "memory_snapshot",
+        name=snap_name,
+        description="test snap",
+        user_id=user,
+    )
 
     snaps = await _call(session, "memory_snapshots", user_id=user)
     assert snap_name in snaps
@@ -368,7 +406,9 @@ async def test_branch_full_lifecycle(session):
     diff = await _call(session, "memory_diff", source=branch_name, user_id=user)
     assert diff  # non-empty diff
 
-    await _call(session, "memory_merge", source=branch_name, strategy="append", user_id=user)
+    await _call(
+        session, "memory_merge", source=branch_name, strategy="append", user_id=user
+    )
     await _call(session, "memory_checkout", name="main", user_id=user)
     await _call(session, "memory_branch_delete", name=branch_name, user_id=user)
 
@@ -391,7 +431,9 @@ async def test_concurrent_store_single_session(session):
     results = await asyncio.gather(*tasks)
     assert all("Stored memory" in r for r in results)
 
-    count = _db_count("mem_memories", f"user_id = '{user}' AND content LIKE 'concurrent item%'")
+    count = _db_count(
+        "mem_memories", f"user_id = '{user}' AND content LIKE 'concurrent item%'"
+    )
     assert count == n, f"Expected {n} rows in DB, got {count}"
 
 
@@ -429,8 +471,7 @@ async def test_concurrent_store_retrieve_interleaved(session):
         for i in range(20)
     ]
     retrieve_tasks = [
-        _call(session, "memory_retrieve", query=kw, user_id=user)
-        for _ in range(10)
+        _call(session, "memory_retrieve", query=kw, user_id=user) for _ in range(10)
     ]
     results = await asyncio.gather(*store_tasks, *retrieve_tasks)
     assert len(results) == 30
@@ -450,7 +491,12 @@ async def test_benchmark_sequential_store(session, capsys):
 
     for i in range(n):
         t0 = time.perf_counter()
-        await _call(session, "memory_store", content=f"bench item {i} {uuid.uuid4().hex}", user_id=user)
+        await _call(
+            session,
+            "memory_store",
+            content=f"bench item {i} {uuid.uuid4().hex}",
+            user_id=user,
+        )
         latencies.append(time.perf_counter() - t0)
 
     latencies.sort()
@@ -461,7 +507,9 @@ async def test_benchmark_sequential_store(session, capsys):
 
     with capsys.disabled():
         print(f"\n[benchmark] sequential store (n={n})")
-        print(f"  avg={avg*1000:.1f}ms  p50={p50*1000:.1f}ms  p95={p95*1000:.1f}ms  p99={p99*1000:.1f}ms")
+        print(
+            f"  avg={avg * 1000:.1f}ms  p50={p50 * 1000:.1f}ms  p95={p95 * 1000:.1f}ms  p99={p99 * 1000:.1f}ms"
+        )
 
     # Sanity: p99 should be under 10s (network + DB + embedding)
     assert p99 < 10.0, f"p99 latency too high: {p99:.2f}s"
@@ -476,7 +524,12 @@ async def test_benchmark_concurrent_store_throughput(session, capsys):
 
     t0 = time.perf_counter()
     tasks = [
-        _call(session, "memory_store", content=f"bench concurrent {i} {uuid.uuid4().hex}", user_id=user)
+        _call(
+            session,
+            "memory_store",
+            content=f"bench concurrent {i} {uuid.uuid4().hex}",
+            user_id=user,
+        )
         for i in range(n)
     ]
     results = await asyncio.gather(*tasks)
@@ -518,7 +571,9 @@ async def test_benchmark_retrieve_latency(session, capsys):
 
     with capsys.disabled():
         print(f"\n[benchmark] retrieve latency (n={n}, corpus=20)")
-        print(f"  avg={avg*1000:.1f}ms  p50={p50*1000:.1f}ms  p95={p95*1000:.1f}ms")
+        print(
+            f"  avg={avg * 1000:.1f}ms  p50={p50 * 1000:.1f}ms  p95={p95 * 1000:.1f}ms"
+        )
 
     assert p95 < 10.0, f"p95 retrieve latency too high: {p95:.2f}s"
 
@@ -536,12 +591,16 @@ async def test_benchmark_mixed_workload(session, capsys):
 
     n = 60
     ops = (
-        [("memory_retrieve", {"query": kw, "user_id": user})] * 36   # 60%
-        + [("memory_store", {"content": f"{kw} new {i}", "user_id": user}) for i in range(18)]  # 30%
-        + [("memory_search", {"query": kw, "user_id": user})] * 6    # 10%
+        [("memory_retrieve", {"query": kw, "user_id": user})] * 36  # 60%
+        + [
+            ("memory_store", {"content": f"{kw} new {i}", "user_id": user})
+            for i in range(18)
+        ]  # 30%
+        + [("memory_search", {"query": kw, "user_id": user})] * 6  # 10%
     )
     # Shuffle deterministically
     import random
+
     random.seed(42)
     random.shuffle(ops)
 

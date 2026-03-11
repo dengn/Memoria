@@ -1,6 +1,5 @@
 """Tests for OpinionEvolver — evidence-based confidence updates."""
 
-
 from memoria.core.memory.config import DEFAULT_CONFIG
 from memoria.core.memory.reflection.opinion import (
     OpinionEvolver,
@@ -17,10 +16,15 @@ QUARANTINE_THRESHOLD = DEFAULT_CONFIG.opinion_quarantine_threshold
 T4_TO_T3_CONFIDENCE = DEFAULT_CONFIG.opinion_t4_to_t3_confidence
 
 
-def _scene(confidence: float = 0.5, tier: TrustTier = TrustTier.T4_UNVERIFIED) -> Memory:
+def _scene(
+    confidence: float = 0.5, tier: TrustTier = TrustTier.T4_UNVERIFIED
+) -> Memory:
     return Memory(
-        memory_id="scene-1", user_id="u1", memory_type=MemoryType.SEMANTIC,
-        content="User prefers verbose errors", initial_confidence=confidence,
+        memory_id="scene-1",
+        user_id="u1",
+        memory_type=MemoryType.SEMANTIC,
+        content="User prefers verbose errors",
+        initial_confidence=confidence,
         trust_tier=tier,
     )
 
@@ -74,7 +78,9 @@ class TestOpinionEvolver:
         assert result.quarantined
 
     def test_t4_promoted_to_t3_at_high_confidence(self):
-        scene = _scene(T4_TO_T3_CONFIDENCE - SUPPORTING_DELTA + 0.001, TrustTier.T4_UNVERIFIED)
+        scene = _scene(
+            T4_TO_T3_CONFIDENCE - SUPPORTING_DELTA + 0.001, TrustTier.T4_UNVERIFIED
+        )
         result = self.evolver.evaluate_evidence(0.9, scene)
 
         assert result.promoted

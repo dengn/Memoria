@@ -25,9 +25,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 GOVERNANCE_TASKS: dict[str, dict[str, Any]] = {
-    "hourly":  {"interval": 3600,   "lock_name": "governance_hourly"},
-    "daily":   {"interval": 86400,  "lock_name": "governance_daily"},
-    "weekly":  {"interval": 604800, "lock_name": "governance_weekly"},
+    "hourly": {"interval": 3600, "lock_name": "governance_hourly"},
+    "daily": {"interval": 86400, "lock_name": "governance_daily"},
+    "weekly": {"interval": 604800, "lock_name": "governance_weekly"},
 }
 
 LOCK_TTL = 300
@@ -81,10 +81,13 @@ class GovernanceTaskRunner:
                 self._release(db, lock_name)
 
     @staticmethod
-    def _dispatch(task_name: str, db_factory: Callable) -> dict[str, int]:
+    def _dispatch(task_name: str, db_factory: Callable | None) -> dict[str, int]:
         results: dict[str, int] = {}
+        if db_factory is None:
+            return results
         try:
             from memoria.core.memory import create_memory_service
+
             svc = create_memory_service(db_factory)
             if task_name == "hourly":
                 r = svc.run_hourly()
@@ -106,25 +109,45 @@ class GovernanceTaskRunner:
         now = datetime.now()
         expires_at = now + timedelta(seconds=LOCK_TTL)
         try:
-            db.execute(text(
-                "INSERT INTO infra_distributed_locks (lock_name, instance_id, acquired_at, expires_at, task_name) "
-                "VALUES (:name, :iid, :now, :exp, :task)"
-            ), {"name": lock_name, "iid": self._instance_id, "now": now, "exp": expires_at, "task": lock_name.split("_", 1)[1]})
+            db.execute(
+                text(
+                    "INSERT INTO infra_distributed_locks (lock_name, instance_id, acquired_at, expires_at, task_name) "
+                    "VALUES (:name, :iid, :now, :exp, :task)"
+                ),
+                {
+                    "name": lock_name,
+                    "iid": self._instance_id,
+                    "now": now,
+                    "exp": expires_at,
+                    "task": lock_name.split("_", 1)[1],
+                },
+            )
             db.commit()
             return True
         except (IntegrityError, OperationalError):
             db.rollback()
-        result = db.execute(text(
-            "UPDATE infra_distributed_locks SET instance_id = :iid, acquired_at = :now, expires_at = :exp "
-            "WHERE lock_name = :name AND expires_at < :now"
-        ), {"iid": self._instance_id, "now": now, "exp": expires_at, "name": lock_name})
+        result = db.execute(
+            text(
+                "UPDATE infra_distributed_locks SET instance_id = :iid, acquired_at = :now, expires_at = :exp "
+                "WHERE lock_name = :name AND expires_at < :now"
+            ),
+            {
+                "iid": self._instance_id,
+                "now": now,
+                "exp": expires_at,
+                "name": lock_name,
+            },
+        )
         db.commit()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined]
 
     @staticmethod
     def _release(db: Session, lock_name: str) -> None:
         try:
-            db.execute(text("DELETE FROM infra_distributed_locks WHERE lock_name = :name"), {"name": lock_name})
+            db.execute(
+                text("DELETE FROM infra_distributed_locks WHERE lock_name = :name"),
+                {"name": lock_name},
+            )
             db.commit()
         except Exception as e:
             logger.error(f"Lock release failed: {e}")
@@ -132,9 +155,12 @@ class GovernanceTaskRunner:
     @staticmethod
     def _persist_run(db: Session, task_name: str, result: dict[str, int]) -> None:
         try:
-            db.execute(text(
-                "INSERT INTO governance_runs (task_name, result, created_at) VALUES (:task, :result, :ts)"
-            ), {"task": task_name, "result": json.dumps(result), "ts": datetime.now()})
+            db.execute(
+                text(
+                    "INSERT INTO governance_runs (task_name, result, created_at) VALUES (:task, :result, :ts)"
+                ),
+                {"task": task_name, "result": json.dumps(result), "ts": datetime.now()},
+            )
             db.commit()
         except Exception as e:
             logger.debug("governance_runs write skipped: %s", e)
@@ -144,10 +170,17 @@ class GovernanceTaskRunner:
         while not stop.wait(HEARTBEAT_INTERVAL):
             try:
                 with self._db_ctx() as db:
-                    db.execute(text(
-                        "UPDATE infra_distributed_locks SET expires_at = :exp "
-                        "WHERE lock_name = :name AND instance_id = :iid"
-                    ), {"exp": datetime.now() + timedelta(seconds=LOCK_TTL), "name": lock_name, "iid": instance_id})
+                    db.execute(
+                        text(
+                            "UPDATE infra_distributed_locks SET expires_at = :exp "
+                            "WHERE lock_name = :name AND instance_id = :iid"
+                        ),
+                        {
+                            "exp": datetime.now() + timedelta(seconds=LOCK_TTL),
+                            "name": lock_name,
+                            "iid": instance_id,
+                        },
+                    )
                     db.commit()
             except Exception:
                 pass
@@ -179,7 +212,9 @@ class AsyncIOBackend(SchedulerBackend):
 
 class MemoryGovernanceScheduler:
     def __init__(self, backend: SchedulerBackend | None = None):
-        self._enabled = os.environ.get("MEMORIA_GOVERNANCE_ENABLED", "true").lower() == "true"
+        self._enabled = (
+            os.environ.get("MEMORIA_GOVERNANCE_ENABLED", "true").lower() == "true"
+        )
         self._backend = backend
 
     async def start(self) -> None:

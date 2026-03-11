@@ -1,7 +1,12 @@
 """Embedding package — unified embedding client with pluggable providers."""
 
 from memoria.core.embedding.client import EmbeddingClient
-from memoria.core.embedding.providers import BaseEmbeddingProvider, LocalProvider, MockProvider, OpenAIProvider
+from memoria.core.embedding.providers import (
+    BaseEmbeddingProvider,
+    LocalProvider,
+    MockProvider,
+    OpenAIProvider,
+)
 
 __all__ = [
     "EmbeddingClient",
@@ -52,6 +57,8 @@ def get_embedding_client() -> EmbeddingClient:
         )
         logging.getLogger(__name__).info(
             "EmbeddingClient: provider=%s, model=%s, dim=%d",
-            s.embedding_provider, s.embedding_model, dim,
+            s.embedding_provider,
+            s.embedding_model,
+            dim,
         )
     return _shared_client

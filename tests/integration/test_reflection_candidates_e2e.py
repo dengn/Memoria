@@ -13,7 +13,10 @@ from datetime import datetime, timedelta, timezone
 
 from tests.conftest import TEST_EMBEDDING_DIM
 from memoria.core.memory.models.memory import MemoryRecord
-from memoria.core.memory.tabular.candidates import TabularCandidateProvider, _cosine_similarity
+from memoria.core.memory.tabular.candidates import (
+    TabularCandidateProvider,
+    _cosine_similarity,
+)
 
 
 def _utcnow():
@@ -21,7 +24,10 @@ def _utcnow():
 
 
 def _make_memory(
-    db, user_id: str, content: str, *,
+    db,
+    user_id: str,
+    content: str,
+    *,
     memory_type: str = "semantic",
     session_id: str | None = "s1",
     embedding: list[float] | None = None,
@@ -55,7 +61,6 @@ def _make_memory(
 
 
 class TestSignalSemanticClusters:
-
     def test_cross_session_cluster_found(self, db, db_factory):
         """Two similar memories in different sessions → 1 candidate."""
         uid = f"u-{uuid.uuid4().hex[:8]}"
@@ -103,8 +108,12 @@ class TestSignalSemanticClusters:
         uid = f"u-{uuid.uuid4().hex[:8]}"
         emb = [1.0] * TEST_EMBEDDING_DIM
         old_time = _utcnow() - timedelta(hours=48)
-        _make_memory(db, uid, "old", session_id="s1", embedding=emb, observed_at=old_time)
-        _make_memory(db, uid, "old", session_id="s2", embedding=emb, observed_at=old_time)
+        _make_memory(
+            db, uid, "old", session_id="s1", embedding=emb, observed_at=old_time
+        )
+        _make_memory(
+            db, uid, "old", session_id="s2", embedding=emb, observed_at=old_time
+        )
 
         provider = TabularCandidateProvider(db_factory)
         candidates = provider.get_reflection_candidates(uid, since_hours=24)
@@ -128,10 +137,22 @@ class TestSignalSemanticClusters:
         """Verify all Memory fields are correctly populated from DB."""
         uid = f"u-{uuid.uuid4().hex[:8]}"
         emb = [0.5] * TEST_EMBEDDING_DIM
-        _make_memory(db, uid, "content A", session_id="s1", embedding=emb,
-                     memory_type="procedural")
-        _make_memory(db, uid, "content A", session_id="s2", embedding=emb,
-                     memory_type="procedural")
+        _make_memory(
+            db,
+            uid,
+            "content A",
+            session_id="s1",
+            embedding=emb,
+            memory_type="procedural",
+        )
+        _make_memory(
+            db,
+            uid,
+            "content A",
+            session_id="s2",
+            embedding=emb,
+            memory_type="procedural",
+        )
 
         provider = TabularCandidateProvider(db_factory)
         candidates = provider.get_reflection_candidates(uid, since_hours=1)
@@ -153,14 +174,17 @@ class TestSignalSemanticClusters:
 
 
 class TestSignalContradictionPairs:
-
     def test_supersede_chain_found(self, db, db_factory):
         """Old memory superseded by new → 1 contradiction candidate."""
         uid = f"u-{uuid.uuid4().hex[:8]}"
         new_row = _make_memory(db, uid, "new belief", session_id="s2")
         _make_memory(
-            db, uid, "old belief", session_id="s1",
-            superseded_by=new_row.memory_id, is_active=0,
+            db,
+            uid,
+            "old belief",
+            session_id="s1",
+            superseded_by=new_row.memory_id,
+            is_active=0,
         )
 
         provider = TabularCandidateProvider(db_factory)
@@ -181,8 +205,12 @@ class TestSignalContradictionPairs:
         old_time = _utcnow() - timedelta(hours=48)
         new_row = _make_memory(db, uid, "new", session_id="s2", observed_at=old_time)
         _make_memory(
-            db, uid, "old", session_id="s1",
-            superseded_by=new_row.memory_id, is_active=0,
+            db,
+            uid,
+            "old",
+            session_id="s1",
+            superseded_by=new_row.memory_id,
+            is_active=0,
             observed_at=old_time - timedelta(hours=1),
         )
 
@@ -197,15 +225,18 @@ class TestSignalContradictionPairs:
 
 
 class TestSignalSummaryRecurrence:
-
     def test_recurring_summaries_found(self, db, db_factory):
         """3+ similar cross-session summaries → 1 recurrence candidate."""
         uid = f"u-{uuid.uuid4().hex[:8]}"
         emb = [0.7] * TEST_EMBEDDING_DIM
         for i in range(4):
             _make_memory(
-                db, uid, f"User prefers concise output v{i}",
-                memory_type="semantic", session_id=None, embedding=emb,
+                db,
+                uid,
+                f"User prefers concise output v{i}",
+                memory_type="semantic",
+                session_id=None,
+                embedding=emb,
             )
 
         provider = TabularCandidateProvider(db_factory)
@@ -222,8 +253,12 @@ class TestSignalSummaryRecurrence:
         emb = [0.7] * TEST_EMBEDDING_DIM
         for i in range(2):
             _make_memory(
-                db, uid, f"summary {i}",
-                memory_type="semantic", session_id=None, embedding=emb,
+                db,
+                uid,
+                f"summary {i}",
+                memory_type="semantic",
+                session_id=None,
+                embedding=emb,
             )
 
         provider = TabularCandidateProvider(db_factory)
@@ -237,7 +272,6 @@ class TestSignalSummaryRecurrence:
 
 
 class TestCosineAndClustering:
-
     def test_cosine_identical(self):
         assert abs(_cosine_similarity([1, 0], [1, 0]) - 1.0) < 0.001
 
@@ -252,7 +286,6 @@ class TestCosineAndClustering:
 
 
 class TestUserIsolation:
-
     def test_other_user_memories_not_included(self, db, db_factory):
         """Memories from other users must not appear in candidates."""
         uid_a = f"u-{uuid.uuid4().hex[:8]}"

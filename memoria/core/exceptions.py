@@ -36,7 +36,9 @@ class SkillExecutionError(SkillError):
     """Skill execution failed."""
 
     def __init__(self, skill_name: str, message: str):
-        super().__init__(f"Skill '{skill_name}' execution failed: {message}", skill_name=skill_name)
+        super().__init__(
+            f"Skill '{skill_name}' execution failed: {message}", skill_name=skill_name
+        )
         self.code = "SKILL_EXECUTION_ERROR"
 
 
@@ -84,7 +86,9 @@ class LLMTimeoutError(LLMError):
     """LLM request timed out."""
 
     def __init__(self, provider: str, timeout: float):
-        super().__init__(f"LLM request to {provider} timed out after {timeout}s", provider=provider)
+        super().__init__(
+            f"LLM request to {provider} timed out after {timeout}s", provider=provider
+        )
         self.code = "LLM_TIMEOUT"
 
 

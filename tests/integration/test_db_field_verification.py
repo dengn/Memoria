@@ -58,12 +58,15 @@ class TestStoreCreate:
         uid = _uid()
         before = _strip_tz(_now_utc())
 
-        mem = _mem(uid, content="hello world",
-                   memory_type=MemoryType.PROFILE,
-                   trust_tier=TrustTier.T2_CURATED,
-                   initial_confidence=0.75,
-                   source_event_ids=["evt:abc", "evt:def"],
-                   session_id="sess-001")
+        mem = _mem(
+            uid,
+            content="hello world",
+            memory_type=MemoryType.PROFILE,
+            trust_tier=TrustTier.T2_CURATED,
+            initial_confidence=0.75,
+            source_event_ids=["evt:abc", "evt:def"],
+            session_id="sess-001",
+        )
         result = store.create(mem)
         after = _strip_tz(_now_utc())
 
@@ -94,7 +97,11 @@ class TestStoreCreate:
         assert before <= _strip_tz(row.observed_at) <= after
         assert before <= _strip_tz(row.created_at) <= after
         # source_event_ids as JSON array
-        src = json.loads(row.source_event_ids) if isinstance(row.source_event_ids, str) else row.source_event_ids
+        src = (
+            json.loads(row.source_event_ids)
+            if isinstance(row.source_event_ids, str)
+            else row.source_event_ids
+        )
         assert set(src) == {"evt:abc", "evt:def"}
 
     def test_create_null_session_stored_as_null(self, db_factory):
@@ -228,10 +235,13 @@ class TestEditorInject:
         editor = MemoryEditor(storage, db_factory)
 
         before = _strip_tz(_now_utc())
-        mem = editor.inject(uid, "injected content",
-                            memory_type=MemoryType.SEMANTIC,
-                            source="test_inject",
-                            session_id="sess-inject")
+        mem = editor.inject(
+            uid,
+            "injected content",
+            memory_type=MemoryType.SEMANTIC,
+            source="test_inject",
+            session_id="sess-inject",
+        )
         after = _strip_tz(_now_utc())
 
         db = db_factory()
@@ -243,13 +253,13 @@ class TestEditorInject:
         assert row.user_id == uid
         assert row.content == "injected content"
         assert str(row.memory_type) == "semantic"
-        assert str(row.trust_tier) == "T1"          # inject default: T1_VERIFIED
+        assert str(row.trust_tier) == "T1"  # inject default: T1_VERIFIED
         assert abs(float(row.initial_confidence) - 1.0) < 0.01  # inject default: 1.0
         assert row.is_active == 1
         assert row.session_id == "sess-inject"
         assert row.superseded_by is None
         assert row.updated_at is not None  # set on insert
-        assert row.embedding is not None   # embed_client is active
+        assert row.embedding is not None  # embed_client is active
         assert before <= _strip_tz(row.observed_at) <= after
         assert before <= _strip_tz(row.created_at) <= after
 
@@ -262,13 +272,18 @@ class TestEditorInject:
         editor = MemoryEditor(storage, db_factory)
 
         before = _strip_tz(_now_utc())
-        mem = editor.inject(uid, "audit test", memory_type=MemoryType.SEMANTIC, source="src_test")
+        mem = editor.inject(
+            uid, "audit test", memory_type=MemoryType.SEMANTIC, source="src_test"
+        )
         after = _strip_tz(_now_utc())
 
         db = db_factory()
-        log = db.query(MemoryEditLog).filter_by(user_id=uid, operation="inject").order_by(
-            MemoryEditLog.created_at.desc()
-        ).first()
+        log = (
+            db.query(MemoryEditLog)
+            .filter_by(user_id=uid, operation="inject")
+            .order_by(MemoryEditLog.created_at.desc())
+            .first()
+        )
         db.close()
 
         assert log is not None
@@ -276,7 +291,11 @@ class TestEditorInject:
         assert log.user_id == uid
         assert log.operation == "inject"
         # target_ids must contain the memory_id
-        target_ids = json.loads(log.target_ids) if isinstance(log.target_ids, str) else log.target_ids
+        target_ids = (
+            json.loads(log.target_ids)
+            if isinstance(log.target_ids, str)
+            else log.target_ids
+        )
         assert mem.memory_id in target_ids
         assert log.reason is not None  # source stored as reason
         assert log.snapshot_before is None  # inject never creates a snapshot
@@ -331,11 +350,18 @@ class TestEditorInject:
             assert row.superseded_by is None
 
         # Audit log for batch
-        log = db.query(MemoryEditLog).filter_by(user_id=uid, operation="inject").order_by(
-            MemoryEditLog.created_at.desc()
-        ).first()
+        log = (
+            db.query(MemoryEditLog)
+            .filter_by(user_id=uid, operation="inject")
+            .order_by(MemoryEditLog.created_at.desc())
+            .first()
+        )
         assert log is not None
-        target_ids = json.loads(log.target_ids) if isinstance(log.target_ids, str) else log.target_ids
+        target_ids = (
+            json.loads(log.target_ids)
+            if isinstance(log.target_ids, str)
+            else log.target_ids
+        )
         assert len(target_ids) == 3
         db.close()
 
@@ -351,24 +377,31 @@ class TestEditorCorrect:
         storage = CanonicalStorage(db_factory)
         editor = MemoryEditor(storage, db_factory)
 
-        original = editor.inject(uid, "original content", memory_type=MemoryType.SEMANTIC)
+        original = editor.inject(
+            uid, "original content", memory_type=MemoryType.SEMANTIC
+        )
 
         before = _strip_tz(_now_utc())
-        corrected = editor.correct(uid, original.memory_id,
-                                   "corrected content", reason="user correction")
+        corrected = editor.correct(
+            uid, original.memory_id, "corrected content", reason="user correction"
+        )
         after = _strip_tz(_now_utc())
 
         db = db_factory()
 
         # Ground truth 1: original deactivated + linked + updated_at set
-        orig_row = db.query(MemoryRecord).filter_by(memory_id=original.memory_id).first()
+        orig_row = (
+            db.query(MemoryRecord).filter_by(memory_id=original.memory_id).first()
+        )
         assert orig_row.is_active == 0
         assert orig_row.superseded_by == corrected.memory_id
         assert orig_row.updated_at is not None
         assert before <= _strip_tz(orig_row.updated_at) <= after
 
         # Ground truth 2: corrected record — every field
-        corr_row = db.query(MemoryRecord).filter_by(memory_id=corrected.memory_id).first()
+        corr_row = (
+            db.query(MemoryRecord).filter_by(memory_id=corrected.memory_id).first()
+        )
         assert corr_row.is_active == 1
         assert corr_row.content == "corrected content"
         assert corr_row.user_id == uid
@@ -377,9 +410,12 @@ class TestEditorCorrect:
         assert before <= _strip_tz(corr_row.created_at) <= after
 
         # Ground truth 3: audit log — every field
-        log = db.query(MemoryEditLog).filter_by(user_id=uid, operation="correct").order_by(
-            MemoryEditLog.created_at.desc()
-        ).first()
+        log = (
+            db.query(MemoryEditLog)
+            .filter_by(user_id=uid, operation="correct")
+            .order_by(MemoryEditLog.created_at.desc())
+            .first()
+        )
         assert log is not None
         assert log.edit_id is not None
         assert log.user_id == uid
@@ -387,7 +423,11 @@ class TestEditorCorrect:
         assert "user correction" in (log.reason or "")
         assert log.snapshot_before is None  # correct never creates a snapshot
         assert log.created_by == uid
-        target_ids = json.loads(log.target_ids) if isinstance(log.target_ids, str) else log.target_ids
+        target_ids = (
+            json.loads(log.target_ids)
+            if isinstance(log.target_ids, str)
+            else log.target_ids
+        )
         assert corrected.memory_id in target_ids
         assert before <= _strip_tz(log.created_at) <= after
 
@@ -441,17 +481,26 @@ class TestEditorPurge:
         assert result.deactivated == 1
 
         # Audit log
-        log = db.query(MemoryEditLog).filter_by(user_id=uid, operation="purge").order_by(
-            MemoryEditLog.created_at.desc()
-        ).first()
+        log = (
+            db.query(MemoryEditLog)
+            .filter_by(user_id=uid, operation="purge")
+            .order_by(MemoryEditLog.created_at.desc())
+            .first()
+        )
         assert log is not None
         assert log.user_id == uid
         assert log.operation == "purge"
         assert "test purge" in (log.reason or "")
         # snapshot_before: set if GitForData succeeds (best-effort), may be None
-        assert log.snapshot_before is None or log.snapshot_before.startswith("pre_purge_")
+        assert log.snapshot_before is None or log.snapshot_before.startswith(
+            "pre_purge_"
+        )
         assert log.created_by == uid
-        target_ids = json.loads(log.target_ids) if isinstance(log.target_ids, str) else log.target_ids
+        target_ids = (
+            json.loads(log.target_ids)
+            if isinstance(log.target_ids, str)
+            else log.target_ids
+        )
         assert m_purge.memory_id in target_ids
         assert before <= _strip_tz(log.created_at) <= after
 
@@ -511,8 +560,11 @@ class TestObserveExplicit:
         storage = CanonicalStorage(db_factory, embed_fn=embed_client.embed)
         before = _strip_tz(_now_utc())
 
-        mem = storage.store(uid, f"completely unique content {uuid.uuid4().hex}",
-                            memory_type=MemoryType.SEMANTIC)
+        mem = storage.store(
+            uid,
+            f"completely unique content {uuid.uuid4().hex}",
+            memory_type=MemoryType.SEMANTIC,
+        )
         after = _strip_tz(_now_utc())
 
         db = db_factory()
@@ -523,7 +575,7 @@ class TestObserveExplicit:
         assert row.is_active == 1
         assert row.user_id == uid
         assert row.superseded_by is None
-        assert row.embedding is not None   # embed_client is active
+        assert row.embedding is not None  # embed_client is active
         assert before <= _strip_tz(row.observed_at) <= after
         assert before <= _strip_tz(row.created_at) <= after
 
@@ -534,7 +586,9 @@ class TestObserveExplicit:
         uid_a, uid_b = _uid(), _uid()
         storage = CanonicalStorage(db_factory)
 
-        b_mem = storage.store(uid_b, "b's unique content xyz", memory_type=MemoryType.SEMANTIC)
+        b_mem = storage.store(
+            uid_b, "b's unique content xyz", memory_type=MemoryType.SEMANTIC
+        )
         storage.store(uid_a, "a's unique content abc", memory_type=MemoryType.SEMANTIC)
 
         db = db_factory()
@@ -555,12 +609,15 @@ class TestGovernanceHourly:
         uid = _uid()
         db = db_factory()
         mid = uuid.uuid4().hex
-        db.execute(text(
-            "INSERT INTO mem_memories (memory_id, user_id, content, memory_type, "
-            "trust_tier, initial_confidence, is_active, source_event_ids, observed_at, created_at) "
-            "VALUES (:mid, :uid, 'tool result', 'tool_result', 'T3', 0.5, 1, '[]', "
-            "DATE_SUB(NOW(), INTERVAL 25 HOUR), DATE_SUB(NOW(), INTERVAL 25 HOUR))"
-        ), {"mid": mid, "uid": uid})
+        db.execute(
+            text(
+                "INSERT INTO mem_memories (memory_id, user_id, content, memory_type, "
+                "trust_tier, initial_confidence, is_active, source_event_ids, observed_at, created_at) "
+                "VALUES (:mid, :uid, 'tool result', 'tool_result', 'T3', 0.5, 1, '[]', "
+                "DATE_SUB(NOW(), INTERVAL 25 HOUR), DATE_SUB(NOW(), INTERVAL 25 HOUR))"
+            ),
+            {"mid": mid, "uid": uid},
+        )
         db.commit()
         db.close()
 
@@ -584,12 +641,15 @@ class TestGovernanceHourly:
         sid = f"sess_{uuid.uuid4().hex[:8]}"
         db = db_factory()
         mid = uuid.uuid4().hex
-        db.execute(text(
-            "INSERT INTO mem_memories (memory_id, user_id, content, memory_type, "
-            "trust_tier, initial_confidence, is_active, session_id, source_event_ids, observed_at, created_at) "
-            "VALUES (:mid, :uid, 'working mem', 'working', 'T3', 0.5, 1, :sid, '[]', "
-            "DATE_SUB(NOW(), INTERVAL 3 HOUR), DATE_SUB(NOW(), INTERVAL 3 HOUR))"
-        ), {"mid": mid, "uid": uid, "sid": sid})
+        db.execute(
+            text(
+                "INSERT INTO mem_memories (memory_id, user_id, content, memory_type, "
+                "trust_tier, initial_confidence, is_active, session_id, source_event_ids, observed_at, created_at) "
+                "VALUES (:mid, :uid, 'working mem', 'working', 'T3', 0.5, 1, :sid, '[]', "
+                "DATE_SUB(NOW(), INTERVAL 3 HOUR), DATE_SUB(NOW(), INTERVAL 3 HOUR))"
+            ),
+            {"mid": mid, "uid": uid, "sid": sid},
+        )
         db.commit()
         db.close()
 
@@ -611,9 +671,11 @@ class TestGovernanceHourly:
 
         uid = _uid()
         from memoria.core.memory.tabular.store import MemoryStore
+
         store = MemoryStore(db_factory)
-        recent = store.create(_mem(uid, content="recent tool result",
-                                   memory_type=MemoryType.TOOL_RESULT))
+        recent = store.create(
+            _mem(uid, content="recent tool result", memory_type=MemoryType.TOOL_RESULT)
+        )
 
         scheduler = GovernanceScheduler(db_factory)
         scheduler.run_hourly()
@@ -636,12 +698,15 @@ class TestGovernanceDaily:
         uid = _uid()
         db = db_factory()
         mid = uuid.uuid4().hex
-        db.execute(text(
-            "INSERT INTO mem_memories (memory_id, user_id, content, memory_type, "
-            "trust_tier, initial_confidence, is_active, source_event_ids, observed_at, created_at) "
-            "VALUES (:mid, :uid, 'stale low conf', 'semantic', 'T4', 0.05, 1, '[]', "
-            "DATE_SUB(NOW(), INTERVAL 31 DAY), DATE_SUB(NOW(), INTERVAL 31 DAY))"
-        ), {"mid": mid, "uid": uid})
+        db.execute(
+            text(
+                "INSERT INTO mem_memories (memory_id, user_id, content, memory_type, "
+                "trust_tier, initial_confidence, is_active, source_event_ids, observed_at, created_at) "
+                "VALUES (:mid, :uid, 'stale low conf', 'semantic', 'T4', 0.05, 1, '[]', "
+                "DATE_SUB(NOW(), INTERVAL 31 DAY), DATE_SUB(NOW(), INTERVAL 31 DAY))"
+            ),
+            {"mid": mid, "uid": uid},
+        )
         db.commit()
         db.close()
 
@@ -652,8 +717,9 @@ class TestGovernanceDaily:
         row = db.query(MemoryRecord).filter_by(memory_id=mid).first()
         db.close()
 
-        assert row.is_active == 0 or float(row.initial_confidence) < 0.06, \
+        assert row.is_active == 0 or float(row.initial_confidence) < 0.06, (
             "Low confidence stale memory must be quarantined or decayed"
+        )
         assert report.quarantined >= 1 or report.cleaned_stale >= 1
         assert report.errors == []
 
@@ -664,8 +730,9 @@ class TestGovernanceDaily:
 
         uid = _uid()
         store = MemoryStore(db_factory)
-        high_conf = store.create(_mem(uid, content="high confidence memory",
-                                      initial_confidence=0.95))
+        high_conf = store.create(
+            _mem(uid, content="high confidence memory", initial_confidence=0.95)
+        )
 
         scheduler = GovernanceScheduler(db_factory)
         scheduler.run_daily_all()

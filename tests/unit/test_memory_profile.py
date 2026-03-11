@@ -93,8 +93,11 @@ class TestUpdateFromMemories:
         manager.get_profile("u1")
 
         episodic = Memory(
-            memory_id="e1", user_id="u1", memory_type=MemoryType.SEMANTIC,
-            content="event", initial_confidence=0.7,
+            memory_id="e1",
+            user_id="u1",
+            memory_type=MemoryType.SEMANTIC,
+            content="event",
+            initial_confidence=0.7,
         )
         result = manager.update_from_memories("u1", [episodic])
 

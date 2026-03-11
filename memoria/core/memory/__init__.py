@@ -12,7 +12,11 @@ See docs/design/memory/backend-management.md
 
 # ── Public interface ──────────────────────────────────────────────────
 from memoria.core.memory.config import DEFAULT_CONFIG, MemoryGovernanceConfig
-from memoria.core.memory.factory import create_memory_service, set_user_strategy, switch_user_strategy
+from memoria.core.memory.factory import (
+    create_memory_service,
+    set_user_strategy,
+    switch_user_strategy,
+)
 from memoria.core.memory.interfaces import (
     CandidateProvider,
     GovernanceReport,

@@ -41,15 +41,21 @@ def create_api_key(
 
     raw_key, key_hash, key_prefix = ApiKey.generate_key()
     key = ApiKey(
-        key_id=str(uuid4()), user_id=req.user_id,
-        key_hash=key_hash, key_prefix=key_prefix, name=req.name,
+        key_id=str(uuid4()),
+        user_id=req.user_id,
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        name=req.name,
     )
     db.add(key)
     db.commit()
     db.refresh(key)
     return KeyResponse(
-        key_id=key.key_id, user_id=key.user_id, name=key.name,
-        key_prefix=key_prefix, created_at=key.created_at.isoformat(),
+        key_id=key.key_id,
+        user_id=key.user_id,
+        name=key.name,
+        key_prefix=key_prefix,
+        created_at=key.created_at.isoformat(),
         raw_key=raw_key,
     )
 
@@ -59,11 +65,24 @@ def list_api_keys(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db_session),
 ):
-    rows = db.query(ApiKey.key_id, ApiKey.user_id, ApiKey.name, ApiKey.key_prefix, ApiKey.created_at).filter_by(user_id=user_id, is_active=1).all()
+    rows = (
+        db.query(
+            ApiKey.key_id,
+            ApiKey.user_id,
+            ApiKey.name,
+            ApiKey.key_prefix,
+            ApiKey.created_at,
+        )
+        .filter_by(user_id=user_id, is_active=1)
+        .all()
+    )
     return [
         KeyResponse(
-            key_id=r.key_id, user_id=r.user_id, name=r.name,
-            key_prefix=r.key_prefix, created_at=r.created_at.isoformat(),
+            key_id=r.key_id,
+            user_id=r.user_id,
+            name=r.name,
+            key_prefix=r.key_prefix,
+            created_at=r.created_at.isoformat(),
         )
         for r in rows
     ]

@@ -103,7 +103,9 @@ class MemoryEditor:
         )
 
         if self._index_manager:
-            self._index_manager.on_memories_stored(user_id, [mem], session_id=session_id)
+            self._index_manager.on_memories_stored(
+                user_id, [mem], session_id=session_id
+            )
 
         self._log_edit(user_id, "inject", target_ids=[mem.memory_id], reason=source)
         return mem
@@ -159,18 +161,24 @@ class MemoryEditor:
                 for mem, emb in zip(memories, embeddings, strict=True):
                     mem.embedding = emb
             except Exception:
-                logger.warning("Batch embedding failed, continuing without embeddings", exc_info=True)
+                logger.warning(
+                    "Batch embedding failed, continuing without embeddings",
+                    exc_info=True,
+                )
 
         # Batch store — 1 transaction
         stored = self._storage.batch_store(memories)
 
         # Batch index update — 1 call
         if self._index_manager and stored:
-            self._index_manager.on_memories_stored(user_id, stored, session_id=session_id)
+            self._index_manager.on_memories_stored(
+                user_id, stored, session_id=session_id
+            )
 
         # Single audit entry
         self._log_edit(
-            user_id, "inject",
+            user_id,
+            "inject",
             target_ids=[m.memory_id for m in stored],
             reason=source,
         )
@@ -189,10 +197,16 @@ class MemoryEditor:
             try:
                 query_embedding = self._embed_client.embed(query)
             except Exception:
-                logger.warning("Embedding failed for find_best_match query", exc_info=True)
+                logger.warning(
+                    "Embedding failed for find_best_match query", exc_info=True
+                )
 
         memories, _ = retriever.retrieve(
-            user_id, query, session_id="", query_embedding=query_embedding, limit=1,
+            user_id,
+            query,
+            session_id="",
+            query_embedding=query_embedding,
+            limit=1,
         )
         return memories[0] if memories else None
 
@@ -254,10 +268,13 @@ class MemoryEditor:
         result = store.supersede(memory_id, new_mem)
 
         if self._index_manager:
-            self._index_manager.on_memories_stored(user_id, [result], session_id=old.session_id)
+            self._index_manager.on_memories_stored(
+                user_id, [result], session_id=old.session_id
+            )
 
         self._log_edit(
-            user_id, "correct",
+            user_id,
+            "correct",
             target_ids=[memory_id, result.memory_id],
             reason=reason,
         )
@@ -336,7 +353,8 @@ class MemoryEditor:
             self._index_manager.on_governance(user_id)
 
         self._log_edit(
-            user_id, "purge",
+            user_id,
+            "purge",
             target_ids=purged_ids,
             reason=reason,
             snapshot_before=snapshot_name,
@@ -392,4 +410,6 @@ class MemoryEditor:
                 )
                 db.commit()
         except Exception:
-            logger.debug("Failed to log edit for %s/%s", user_id, operation, exc_info=True)
+            logger.debug(
+                "Failed to log edit for %s/%s", user_id, operation, exc_info=True
+            )

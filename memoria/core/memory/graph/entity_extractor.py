@@ -20,17 +20,78 @@ logger = logging.getLogger(__name__)
 # This is a best-effort heuristic, not exhaustive. LLM extraction (manual trigger)
 # covers terms not in this list. Extend as needed for your domain.
 _TECH_TERMS: set[str] = {
-    "python", "rust", "go", "java", "typescript", "javascript", "ruby", "c++",
-    "react", "vue", "angular", "svelte", "nextjs", "fastapi", "django", "flask",
-    "docker", "kubernetes", "k8s", "terraform", "ansible",
-    "postgresql", "postgres", "mysql", "redis", "mongodb", "sqlite", "matrixone",
-    "elasticsearch", "kafka", "rabbitmq", "nginx", "grafana", "prometheus",
-    "aws", "gcp", "azure", "s3", "ec2", "lambda", "ecs", "eks",
-    "git", "github", "gitlab", "bitbucket",
-    "linux", "macos", "windows", "ubuntu", "debian", "centos",
-    "openai", "anthropic", "claude", "gpt", "llama", "deepseek",
-    "pytest", "jest", "mocha", "ruff", "black", "mypy", "eslint",
-    "sqlalchemy", "pydantic", "numpy", "pandas", "scipy", "pytorch", "tensorflow",
+    "python",
+    "rust",
+    "go",
+    "java",
+    "typescript",
+    "javascript",
+    "ruby",
+    "c++",
+    "react",
+    "vue",
+    "angular",
+    "svelte",
+    "nextjs",
+    "fastapi",
+    "django",
+    "flask",
+    "docker",
+    "kubernetes",
+    "k8s",
+    "terraform",
+    "ansible",
+    "postgresql",
+    "postgres",
+    "mysql",
+    "redis",
+    "mongodb",
+    "sqlite",
+    "matrixone",
+    "elasticsearch",
+    "kafka",
+    "rabbitmq",
+    "nginx",
+    "grafana",
+    "prometheus",
+    "aws",
+    "gcp",
+    "azure",
+    "s3",
+    "ec2",
+    "lambda",
+    "ecs",
+    "eks",
+    "git",
+    "github",
+    "gitlab",
+    "bitbucket",
+    "linux",
+    "macos",
+    "windows",
+    "ubuntu",
+    "debian",
+    "centos",
+    "openai",
+    "anthropic",
+    "claude",
+    "gpt",
+    "llama",
+    "deepseek",
+    "pytest",
+    "jest",
+    "mocha",
+    "ruff",
+    "black",
+    "mypy",
+    "eslint",
+    "sqlalchemy",
+    "pydantic",
+    "numpy",
+    "pandas",
+    "scipy",
+    "pytorch",
+    "tensorflow",
 }
 
 # Pattern: @mention or owner/repo
@@ -44,9 +105,10 @@ _CAMEL_RE = re.compile(r"\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b")
 @dataclass
 class ExtractedEntity:
     """A named entity extracted from text."""
-    name: str           # canonical lowercase name
-    display_name: str   # original casing
-    entity_type: str    # "tech", "person", "repo", "project", "concept"
+
+    name: str  # canonical lowercase name
+    display_name: str  # original casing
+    entity_type: str  # "tech", "person", "repo", "project", "concept"
 
 
 def extract_entities_lightweight(text: str) -> list[ExtractedEntity]:
@@ -104,6 +166,7 @@ JSON array:"""
 @dataclass
 class LLMEntityExtractionResult:
     """Result of LLM entity extraction for a batch of memories."""
+
     total_memories: int = 0
     entities_found: int = 0
     edges_created: int = 0
@@ -111,16 +174,26 @@ class LLMEntityExtractionResult:
 
 
 def extract_entities_llm(
-    text: str, llm_client: Any,
+    text: str,
+    llm_client: Any,
 ) -> list[ExtractedEntity]:
     """LLM-based entity extraction. More accurate but slower."""
     try:
         response = llm_client.chat(
-            messages=[{"role": "user", "content": _LLM_EXTRACT_PROMPT.format(text=text[:2000])}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": _LLM_EXTRACT_PROMPT.format(text=text[:2000]),
+                }
+            ],
             temperature=0.0,
             max_tokens=300,
         )
-        raw = response if isinstance(response, str) else getattr(response, "content", str(response))
+        raw = (
+            response
+            if isinstance(response, str)
+            else getattr(response, "content", str(response))
+        )
         # Extract JSON array from LLM response — tolerates markdown fences and preamble text.
         # Falls back to empty list on any parse failure (best-effort, not critical path).
         start = raw.find("[")
@@ -128,7 +201,7 @@ def extract_entities_llm(
         if start == -1 or end == -1:
             return []
         try:
-            items = json.loads(raw[start:end + 1])
+            items = json.loads(raw[start : end + 1])
         except json.JSONDecodeError:
             logger.debug("LLM entity extraction returned invalid JSON: %s", raw[:200])
             return []
@@ -141,11 +214,13 @@ def extract_entities_llm(
             if not name or name.lower() in seen:
                 continue
             seen.add(name.lower())
-            entities.append(ExtractedEntity(
-                name=name.lower(),
-                display_name=name,
-                entity_type=item.get("type", "concept"),
-            ))
+            entities.append(
+                ExtractedEntity(
+                    name=name.lower(),
+                    display_name=name,
+                    entity_type=item.get("type", "concept"),
+                )
+            )
         return entities
     except Exception:
         logger.warning("LLM entity extraction failed", exc_info=True)

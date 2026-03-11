@@ -28,7 +28,9 @@ class StrategyDescriptor:
         return f"{self.strategy_type}:{self.version}"
 
     @classmethod
-    def parse(cls, key: str, params: dict[str, Any] | None = None) -> StrategyDescriptor:
+    def parse(
+        cls, key: str, params: dict[str, Any] | None = None
+    ) -> StrategyDescriptor:
         """Parse 'vector:v1' into StrategyDescriptor."""
         parts = key.split(":", 1)
         if len(parts) != 2:
@@ -68,7 +70,9 @@ class StrategyRegistry:
         logger.info("Registered strategy: %s", key)
 
     def create_strategy(
-        self, descriptor: StrategyDescriptor, **deps: Any,
+        self,
+        descriptor: StrategyDescriptor,
+        **deps: Any,
     ) -> RetrievalStrategy:
         """Create a retrieval strategy instance."""
         entry = self._entries.get(descriptor.key)
@@ -80,7 +84,9 @@ class StrategyRegistry:
         return entry.strategy_factory(params=descriptor.params, **deps)
 
     def create_index_manager(
-        self, descriptor: StrategyDescriptor, **deps: Any,
+        self,
+        descriptor: StrategyDescriptor,
+        **deps: Any,
     ) -> IndexManager | None:
         """Create an index manager, or None if strategy needs no index."""
         entry = self._entries.get(descriptor.key)

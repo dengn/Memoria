@@ -24,7 +24,9 @@ class DbConsumer:
 
     def __init__(self, db_factory: Callable[[], Session]):
         if not callable(db_factory):
-            raise TypeError(f"db_factory must be callable, got {type(db_factory).__name__}")
+            raise TypeError(
+                f"db_factory must be callable, got {type(db_factory).__name__}"
+            )
         self._db_factory = db_factory
 
     @contextmanager

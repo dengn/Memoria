@@ -14,6 +14,7 @@ import argparse
 import contextlib
 import logging
 import os
+from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
 from sqlalchemy import create_engine, text
@@ -25,34 +26,75 @@ logger = logging.getLogger(__name__)
 # ── Backend protocol ──────────────────────────────────────────────────
 
 
-class MemoryBackend:
+class MemoryBackend(ABC):
     """Abstract backend for memory operations."""
 
-    def store(self, user_id: str, content: str, memory_type: str, session_id: str | None) -> dict: ...
-    def retrieve(self, user_id: str, query: str, top_k: int, session_id: str | None = None) -> list[dict]: ...
-    def correct(self, user_id: str, memory_id: str, new_content: str, reason: str) -> dict: ...
-    def correct_by_query(self, user_id: str, query: str, new_content: str, reason: str) -> dict: ...
-    def purge(self, user_id: str, memory_id: str | None, topic: str | None, reason: str) -> dict: ...
+    @abstractmethod
+    def store(
+        self, user_id: str, content: str, memory_type: str, session_id: str | None
+    ) -> dict: ...
+    @abstractmethod
+    def retrieve(
+        self, user_id: str, query: str, top_k: int, session_id: str | None = None
+    ) -> list[dict]: ...
+    @abstractmethod
+    def correct(
+        self, user_id: str, memory_id: str, new_content: str, reason: str
+    ) -> dict: ...
+    @abstractmethod
+    def correct_by_query(
+        self, user_id: str, query: str, new_content: str, reason: str
+    ) -> dict: ...
+    @abstractmethod
+    def purge(
+        self, user_id: str, memory_id: str | None, topic: str | None, reason: str
+    ) -> dict: ...
+    @abstractmethod
     def profile(self, user_id: str) -> dict: ...
+    @abstractmethod
     def search(self, user_id: str, query: str, top_k: int) -> list[dict]: ...
+    @abstractmethod
     def governance(self, user_id: str, force: bool = False) -> dict: ...
+    @abstractmethod
     def consolidate(self, user_id: str, force: bool = False) -> dict: ...
+    @abstractmethod
     def reflect(self, user_id: str, force: bool = False) -> dict: ...
+    @abstractmethod
     def extract_entities(self, user_id: str) -> dict: ...
+    @abstractmethod
     def get_reflect_candidates(self, user_id: str) -> dict: ...
+    @abstractmethod
     def get_entity_candidates(self, user_id: str) -> dict: ...
+    @abstractmethod
     def link_entities(self, user_id: str, entities: list[dict]) -> dict: ...
+    @abstractmethod
     def rebuild_index(self, table: str) -> str: ...
+    @abstractmethod
     def health_warnings(self, user_id: str) -> list[str]: ...
     # Branching
+    @abstractmethod
     def snapshot_create(self, user_id: str, name: str, description: str) -> dict: ...
+    @abstractmethod
     def snapshot_list(self, user_id: str) -> list[dict]: ...
+    @abstractmethod
     def snapshot_rollback(self, user_id: str, name: str) -> dict: ...
-    def branch_create(self, user_id: str, name: str, from_snapshot: str | None, from_timestamp: str | None) -> dict: ...
+    @abstractmethod
+    def branch_create(
+        self,
+        user_id: str,
+        name: str,
+        from_snapshot: str | None,
+        from_timestamp: str | None,
+    ) -> dict: ...
+    @abstractmethod
     def branch_list(self, user_id: str) -> list[dict]: ...
+    @abstractmethod
     def branch_checkout(self, user_id: str, name: str) -> dict: ...
+    @abstractmethod
     def branch_delete(self, user_id: str, name: str) -> dict: ...
+    @abstractmethod
     def branch_merge(self, user_id: str, source: str, strategy: str) -> dict: ...
+    @abstractmethod
     def branch_diff(self, user_id: str, source: str, limit: int) -> dict: ...
 
 
@@ -73,12 +115,14 @@ class EmbeddedBackend(MemoryBackend):
                 # Auto-create tables on first run (idempotent).
                 # Pass EMBEDDING_DIM so the dim check runs even when tables already exist.
                 from memoria.schema import ensure_tables, DEFAULT_DIM
+
                 try:
                     ensure_tables(self._engine, dim=DEFAULT_DIM)
                 except Exception as e:
                     logger.warning("Auto-migrate failed: %s", e)
             else:
                 from memoria.api.database import SessionLocal
+
                 self._engine = None  # dev mode: engine lives inside SessionLocal
                 self._db_factory = SessionLocal
             from memoria.core.memory.factory import create_editor, create_memory_service
@@ -95,7 +139,9 @@ class EmbeddedBackend(MemoryBackend):
         # This avoids the ~3-5s sentence-transformers model load blocking MCP handshake.
         self._embed_client = None
         self._embed_client_initialized = False
-        self._embed_client_standalone = bool(db_url)  # only auto-init in standalone mode
+        self._embed_client_standalone = bool(
+            db_url
+        )  # only auto-init in standalone mode
         self._create_service = create_memory_service
         self._create_editor = create_editor
         # Per-instance state — class-level dicts would be shared across
@@ -120,11 +166,15 @@ class EmbeddedBackend(MemoryBackend):
         dim = int(os.environ.get("EMBEDDING_DIM") or "0")
         if dim == 0:
             from memoria.core.embedding.client import KNOWN_DIMENSIONS
+
             dim = KNOWN_DIMENSIONS.get(model, 1024)
         try:
             from memoria.core.embedding.client import EmbeddingClient
+
             return EmbeddingClient(
-                provider=provider, model=model, dim=dim,
+                provider=provider,
+                model=model,
+                dim=dim,
                 api_key=os.environ.get("EMBEDDING_API_KEY") or "",
                 base_url=os.environ.get("EMBEDDING_BASE_URL") or None,
             )
@@ -135,10 +185,13 @@ class EmbeddedBackend(MemoryBackend):
                 logger.error(
                     "Embedding provider %r requested but init failed: %s. "
                     "Install the required package (e.g. `pip install openai`).",
-                    provider, exc,
+                    provider,
+                    exc,
                 )
                 raise
-            logger.warning("Embedding client not available, memories won't be vectorized")
+            logger.warning(
+                "Embedding client not available, memories won't be vectorized"
+            )
             return None
 
     def _get_embed_client(self):
@@ -149,19 +202,37 @@ class EmbeddedBackend(MemoryBackend):
                 self._embed_client = self._make_embed_client()
         return self._embed_client
 
-    def store(self, user_id: str, content: str, memory_type: str, session_id: str | None) -> dict:
+    def store(
+        self, user_id: str, content: str, memory_type: str, session_id: str | None
+    ) -> dict:
         from memoria.core.memory.types import MemoryType
 
         db_factory = self._branch_db_factory(user_id)
         embed_client = self._get_embed_client()
-        editor = self._create_editor(db_factory, user_id=user_id, embed_client=embed_client)
-        mem = editor.inject(user_id, content, memory_type=MemoryType(memory_type), source="mcp", session_id=session_id)
-        result: dict = {"memory_id": mem.memory_id, "content": mem.content, "branch": self._get_active_branch(user_id)}
+        editor = self._create_editor(
+            db_factory, user_id=user_id, embed_client=embed_client
+        )
+        mem = editor.inject(
+            user_id,
+            content,
+            memory_type=MemoryType(memory_type),
+            source="mcp",
+            session_id=session_id,
+        )
+        result: dict = {
+            "memory_id": mem.memory_id,
+            "content": mem.content,
+            "branch": self._get_active_branch(user_id),
+        }
         if embed_client is None:
-            result["warning"] = "Embedding client not available — memory stored without vector. Retrieval will fall back to keyword search."
+            result["warning"] = (
+                "Embedding client not available — memory stored without vector. Retrieval will fall back to keyword search."
+            )
         return result
 
-    def retrieve(self, user_id: str, query: str, top_k: int, session_id: str | None = None) -> list[dict]:
+    def retrieve(
+        self, user_id: str, query: str, top_k: int, session_id: str | None = None
+    ) -> list[dict]:
         db_factory = self._branch_db_factory(user_id)
         svc = self._create_service(db_factory, user_id=user_id)
         # Generate query embedding for vector search (phase 2).
@@ -172,14 +243,20 @@ class EmbeddedBackend(MemoryBackend):
             try:
                 query_embedding = embed.embed(query)
             except Exception as e:
-                logger.warning("Query embedding failed, falling back to keyword search: %s", e)
+                logger.warning(
+                    "Query embedding failed, falling back to keyword search: %s", e
+                )
         memories, _ = svc.retrieve(
-            user_id, query,
+            user_id,
+            query,
             query_embedding=query_embedding,
             top_k=top_k,
             session_id=session_id or "",
         )
-        return [{"memory_id": m.memory_id, "content": m.content, "type": str(m.memory_type)} for m in memories]
+        return [
+            {"memory_id": m.memory_id, "content": m.content, "type": str(m.memory_type)}
+            for m in memories
+        ]
 
     # Thresholds for health_warnings — surfaced as constants for testability.
     _LOW_CONFIDENCE_THRESHOLD = 0.4
@@ -190,61 +267,92 @@ class EmbeddedBackend(MemoryBackend):
         warnings: list[str] = []
         try:
             with self._db_factory() as db:
-                row = db.execute(text(
-                    "SELECT COUNT(*) as cnt FROM mem_memories "
-                    "WHERE user_id = :uid AND is_active = 1 "
-                    "AND initial_confidence < :threshold"
-                ), {"uid": user_id, "threshold": self._LOW_CONFIDENCE_THRESHOLD}).fetchone()
+                row = db.execute(
+                    text(
+                        "SELECT COUNT(*) as cnt FROM mem_memories "
+                        "WHERE user_id = :uid AND is_active = 1 "
+                        "AND initial_confidence < :threshold"
+                    ),
+                    {"uid": user_id, "threshold": self._LOW_CONFIDENCE_THRESHOLD},
+                ).fetchone()
                 if row and row.cnt >= self._LOW_CONFIDENCE_WARNING_MIN:
-                    warnings.append(f"{row.cnt} memories have low confidence — consider reviewing with memory_search.")
+                    warnings.append(
+                        f"{row.cnt} memories have low confidence — consider reviewing with memory_search."
+                    )
         except Exception as e:
             logger.debug("health_warnings query failed for user=%s: %s", user_id, e)
         return warnings
 
-    def correct(self, user_id: str, memory_id: str, new_content: str, reason: str) -> dict:
+    def correct(
+        self, user_id: str, memory_id: str, new_content: str, reason: str
+    ) -> dict:
         db_factory = self._branch_db_factory(user_id)
         embed_client = self._get_embed_client()
-        editor = self._create_editor(db_factory, user_id=user_id, embed_client=embed_client)
+        editor = self._create_editor(
+            db_factory, user_id=user_id, embed_client=embed_client
+        )
         mem = editor.correct(user_id, memory_id, new_content, reason=reason)
         result: dict = {"memory_id": mem.memory_id, "content": mem.content}
         if embed_client is None:
-            result["warning"] = "Embedding client not available — memory stored without vector. Retrieval will fall back to keyword search."
+            result["warning"] = (
+                "Embedding client not available — memory stored without vector. Retrieval will fall back to keyword search."
+            )
         return result
 
-    def correct_by_query(self, user_id: str, query: str, new_content: str, reason: str) -> dict:
+    def correct_by_query(
+        self, user_id: str, query: str, new_content: str, reason: str
+    ) -> dict:
         db_factory = self._branch_db_factory(user_id)
         embed_client = self._get_embed_client()
-        editor = self._create_editor(db_factory, user_id=user_id, embed_client=embed_client)
+        editor = self._create_editor(
+            db_factory, user_id=user_id, embed_client=embed_client
+        )
         match = editor.find_best_match(user_id, query)
         if match is None:
-            return {"error": "no_match", "message": f"No memory found matching '{query}'"}
+            return {
+                "error": "no_match",
+                "message": f"No memory found matching '{query}'",
+            }
         mem = editor.correct(user_id, match.memory_id, new_content, reason=reason)
         result: dict = {
-            "memory_id": mem.memory_id, "content": mem.content,
-            "matched_memory_id": match.memory_id, "matched_content": match.content,
+            "memory_id": mem.memory_id,
+            "content": mem.content,
+            "matched_memory_id": match.memory_id,
+            "matched_content": match.content,
         }
         if embed_client is None:
-            result["warning"] = "Embedding client not available — memory stored without vector. Retrieval will fall back to keyword search."
+            result["warning"] = (
+                "Embedding client not available — memory stored without vector. Retrieval will fall back to keyword search."
+            )
         return result
 
-    def purge(self, user_id: str, memory_id: str | None, topic: str | None, reason: str) -> dict:
+    def purge(
+        self, user_id: str, memory_id: str | None, topic: str | None, reason: str
+    ) -> dict:
         db_factory = self._branch_db_factory(user_id)
-        editor = self._create_editor(db_factory, user_id=user_id, embed_client=self._get_embed_client())
+        editor = self._create_editor(
+            db_factory, user_id=user_id, embed_client=self._get_embed_client()
+        )
         if topic:
             # Use SQL LIKE for precise keyword matching. Semantic search
             # (self.retrieve) would return loosely related results ranked by
             # similarity with no score threshold — too dangerous for a
             # destructive bulk operation.
             with db_factory() as db:
-                rows = db.execute(text(
-                    "SELECT memory_id FROM mem_memories "
-                    "WHERE user_id = :uid AND is_active = 1 "
-                    "AND content LIKE :pattern"
-                ), {"uid": user_id, "pattern": f"%{topic}%"}).fetchall()
+                rows = db.execute(
+                    text(
+                        "SELECT memory_id FROM mem_memories "
+                        "WHERE user_id = :uid AND is_active = 1 "
+                        "AND content LIKE :pattern"
+                    ),
+                    {"uid": user_id, "pattern": f"%{topic}%"},
+                ).fetchall()
             ids = [r.memory_id for r in rows]
             if not ids:
                 return {"purged": 0}
-            result = editor.purge(user_id, memory_ids=ids, reason=reason or f"topic purge: {topic}")
+            result = editor.purge(
+                user_id, memory_ids=ids, reason=reason or f"topic purge: {topic}"
+            )
         elif memory_id:
             result = editor.purge(user_id, memory_ids=[memory_id], reason=reason)
         else:
@@ -262,10 +370,17 @@ class EmbeddedBackend(MemoryBackend):
     # Cooldown: governance/consolidate/reflect are expensive, throttle per user.
     # key = (user_id, op_name), value = (timestamp, result).
     # Instance-level to avoid state pollution across parallel test workers.
-    _COOLDOWN_SECONDS: ClassVar[dict[str, int]] = {"governance": 3600, "consolidate": 1800, "reflect": 7200}
+    _COOLDOWN_SECONDS: ClassVar[dict[str, int]] = {
+        "governance": 3600,
+        "consolidate": 1800,
+        "reflect": 7200,
+    }
 
-    def _with_cooldown(self, user_id: str, op: str, fn: Any, force: bool = False) -> dict:
+    def _with_cooldown(
+        self, user_id: str, op: str, fn: Any, force: bool = False
+    ) -> dict:
         import time
+
         key = (user_id, op)
         now = time.time()
         if not force:
@@ -288,6 +403,7 @@ class EmbeddedBackend(MemoryBackend):
         # would be meaningless since branches are short-lived experiments.
         def _run():
             from memoria.core.memory.tabular.governance import GovernanceScheduler
+
             gs = GovernanceScheduler(self._db_factory)
             result = gs.run_cycle(user_id)
             return {
@@ -296,12 +412,14 @@ class EmbeddedBackend(MemoryBackend):
                 "scenes_created": result.scenes_created,
                 "vector_index_health": result.vector_index_health,
             }
+
         return self._with_cooldown(user_id, "governance", _run, force=force)
 
     def consolidate(self, user_id: str, force: bool = False) -> dict:
         # Main-only: graph consolidation merges/promotes nodes in the canonical store.
         def _run():
             from memoria.core.memory.graph.consolidation import GraphConsolidator
+
             gc = GraphConsolidator(self._db_factory)
             result = gc.consolidate(user_id)
             return {
@@ -311,6 +429,7 @@ class EmbeddedBackend(MemoryBackend):
                 "promoted": result.promoted,
                 "demoted": result.demoted,
             }
+
         return self._with_cooldown(user_id, "consolidate", _run, force=force)
 
     def reflect(self, user_id: str, force: bool = False) -> dict:
@@ -324,16 +443,22 @@ class EmbeddedBackend(MemoryBackend):
             svc = GraphMemoryService(self._db_factory)
             try:
                 from memoria.core.llm import get_llm_client
+
                 llm = get_llm_client()
             except Exception:
                 return {"error": "LLM client not available for reflection"}
             engine = ReflectionEngine(provider, svc, llm)
             result = engine.reflect(user_id)
-            return {"scenes_created": result.scenes_created, "candidates_found": result.candidates_found}
+            return {
+                "scenes_created": result.scenes_created,
+                "candidates_found": result.candidates_found,
+            }
+
         return self._with_cooldown(user_id, "reflect", _run, force=force)
 
     def rebuild_index(self, table: str) -> str:
         from memoria.core.memory.tabular.governance import GovernanceScheduler
+
         gs = GovernanceScheduler(self._db_factory)
         result = gs.rebuild_vector_index(table)
         return f"Rebuilt IVF index for {table}: lists {result['old_lists']} → {result['new_lists']} (rows={result['total_rows']})"
@@ -342,44 +467,74 @@ class EmbeddedBackend(MemoryBackend):
         try:
             from memoria.core.memory.graph.service import GraphMemoryService
             from memoria.core.llm import get_llm_client
+
             llm = get_llm_client()
             svc = GraphMemoryService(self._db_factory)
             return svc.extract_entities_llm(user_id, llm)
         except Exception as e:
-            return {"total_memories": 0, "entities_found": 0, "edges_created": 0, "error": str(e)}
+            return {
+                "total_memories": 0,
+                "entities_found": 0,
+                "edges_created": 0,
+                "error": str(e),
+            }
 
     def get_reflect_candidates(self, user_id: str) -> dict:
         """Return raw reflection candidates for user-LLM synthesis (no internal LLM)."""
         from memoria.core.memory.graph.candidates import GraphCandidateProvider
+
         provider = GraphCandidateProvider(self._db_factory)
         candidates = provider.get_reflection_candidates(user_id)
         if not candidates:
             return {"candidates": []}
         clusters = []
         for c in candidates:
-            clusters.append({
-                "signal": c.signal,
-                "importance": round(c.importance_score, 3),
-                "memories": [{"memory_id": m.memory_id, "content": m.content, "type": str(m.memory_type)} for m in c.memories],
-            })
+            clusters.append(
+                {
+                    "signal": c.signal,
+                    "importance": round(c.importance_score, 3),
+                    "memories": [
+                        {
+                            "memory_id": m.memory_id,
+                            "content": m.content,
+                            "type": str(m.memory_type),
+                        }
+                        for m in c.memories
+                    ],
+                }
+            )
         return {"candidates": clusters}
 
     def get_entity_candidates(self, user_id: str) -> dict:
         """Return unlinked memories for user-LLM entity extraction (no internal LLM)."""
         from memoria.core.memory.graph.graph_store import GraphStore
         from memoria.core.memory.graph.types import EdgeType, NodeType
+
         store = GraphStore(self._db_factory)
-        semantic_nodes = store.get_user_nodes(user_id, node_type=NodeType.SEMANTIC, active_only=True, load_embedding=False)
+        semantic_nodes = store.get_user_nodes(
+            user_id, node_type=NodeType.SEMANTIC, active_only=True, load_embedding=False
+        )
         if not semantic_nodes:
             return {"memories": [], "existing_entities": []}
         node_ids = {n.node_id for n in semantic_nodes}
         existing_edges = store.get_edges_for_nodes(node_ids)
-        linked_ids = {nid for nid, edges in existing_edges.items() if any(e.edge_type == EdgeType.ENTITY_LINK.value for e in edges)}
+        linked_ids = {
+            nid
+            for nid, edges in existing_edges.items()
+            if any(e.edge_type == EdgeType.ENTITY_LINK.value for e in edges)
+        }
         unlinked = [n for n in semantic_nodes if n.node_id not in linked_ids]
-        entity_nodes = store.get_user_nodes(user_id, node_type=NodeType.ENTITY, active_only=True, load_embedding=False)
+        entity_nodes = store.get_user_nodes(
+            user_id, node_type=NodeType.ENTITY, active_only=True, load_embedding=False
+        )
         return {
-            "memories": [{"memory_id": n.memory_id or n.node_id, "content": n.content} for n in unlinked[:50]],
-            "existing_entities": [{"name": n.content, "entity_type": n.entity_type} for n in entity_nodes],
+            "memories": [
+                {"memory_id": n.memory_id or n.node_id, "content": n.content}
+                for n in unlinked[:50]
+            ],
+            "existing_entities": [
+                {"name": n.content, "entity_type": n.entity_type} for n in entity_nodes
+            ],
         }
 
     def link_entities(self, user_id: str, entities: list[dict]) -> dict:
@@ -390,6 +545,7 @@ class EmbeddedBackend(MemoryBackend):
         """
         from memoria.core.memory.graph.graph_store import GraphStore
         from memoria.core.memory.graph.types import GraphNodeData
+
         store = GraphStore(self._db_factory)
 
         nodes: list[GraphNodeData] = []
@@ -409,11 +565,18 @@ class EmbeddedBackend(MemoryBackend):
                 entities_per_node[node.node_id] = ent_list
 
         created, pending_edges, reused = store.link_entities_batch(
-            user_id, nodes, entities_per_node, source="manual",
+            user_id,
+            nodes,
+            entities_per_node,
+            source="manual",
         )
         if pending_edges:
             store.add_edges_batch(pending_edges, user_id)
-        return {"entities_created": len(created), "entities_reused": reused, "edges_created": len(pending_edges)}
+        return {
+            "entities_created": len(created),
+            "entities_reused": reused,
+            "edges_created": len(pending_edges),
+        }
 
     # ── Branching ─────────────────────────────────────────────────────
 
@@ -424,6 +587,7 @@ class EmbeddedBackend(MemoryBackend):
     @staticmethod
     def _sanitize_name(name: str) -> str:
         import re
+
         clean = re.sub(r"[^a-zA-Z0-9_]", "_", name)[:40]
         if not clean or not clean[0].isalpha():
             clean = "s_" + clean
@@ -431,6 +595,7 @@ class EmbeddedBackend(MemoryBackend):
 
     def _git(self):
         from memoria.core.git_for_data import GitForData
+
         return GitForData(self._db_factory)
 
     def _source_db_name(self) -> str:
@@ -440,6 +605,7 @@ class EmbeddedBackend(MemoryBackend):
             return str(self._engine.url.database)
         # Dev mode: engine lives inside SessionLocal (api.database).
         from memoria.api.database import SessionLocal
+
         return SessionLocal.kw["bind"].url.database
 
     def _get_active_branch(self, user_id: str) -> str:
@@ -448,13 +614,22 @@ class EmbeddedBackend(MemoryBackend):
             # Restore from DB on cold start
             try:
                 with self._db_factory() as db:
-                    row = db.execute(text(
-                        "SELECT active_branch FROM mem_user_state "
-                        "WHERE user_id = :uid"
-                    ), {"uid": user_id}).fetchone()
-                    self._active_branches[user_id] = row.active_branch if row else "main"
+                    row = db.execute(
+                        text(
+                            "SELECT active_branch FROM mem_user_state "
+                            "WHERE user_id = :uid"
+                        ),
+                        {"uid": user_id},
+                    ).fetchone()
+                    self._active_branches[user_id] = (
+                        row.active_branch if row else "main"
+                    )
             except Exception as e:
-                logger.warning("Failed to load active branch for user=%s, defaulting to main: %s", user_id, e)
+                logger.warning(
+                    "Failed to load active branch for user=%s, defaulting to main: %s",
+                    user_id,
+                    e,
+                )
                 self._active_branches[user_id] = "main"
         return self._active_branches[user_id]
 
@@ -481,16 +656,21 @@ class EmbeddedBackend(MemoryBackend):
             self._evict_branch_cache(user_id, old)
         try:
             with self._db_factory() as db:
-                db.execute(text(
-                    "INSERT INTO mem_user_state (user_id, active_branch, updated_at) "
-                    "VALUES (:uid, :branch, NOW()) "
-                    "ON DUPLICATE KEY UPDATE active_branch = :branch, updated_at = NOW()"
-                ), {"uid": user_id, "branch": name})
+                db.execute(
+                    text(
+                        "INSERT INTO mem_user_state (user_id, active_branch, updated_at) "
+                        "VALUES (:uid, :branch, NOW()) "
+                        "ON DUPLICATE KEY UPDATE active_branch = :branch, updated_at = NOW()"
+                    ),
+                    {"uid": user_id, "branch": name},
+                )
                 db.commit()
         except Exception as e:
             # Best-effort persist; in-memory is authoritative for this session.
             # On next cold start the branch will revert to main if this write failed.
-            logger.warning("Failed to persist active branch for user=%s: %s", user_id, e)
+            logger.warning(
+                "Failed to persist active branch for user=%s: %s", user_id, e
+            )
 
     def _branch_db_factory(self, user_id: str) -> Any:
         """Return db_factory for the user's active branch. Main → original factory.
@@ -510,10 +690,13 @@ class EmbeddedBackend(MemoryBackend):
 
         # Look up branch_db name
         with self._db_factory() as db:
-            row = db.execute(text(
-                "SELECT branch_db FROM mem_branches "
-                "WHERE user_id = :uid AND name = :name AND status = 'active'"
-            ), {"uid": user_id, "name": branch}).fetchone()
+            row = db.execute(
+                text(
+                    "SELECT branch_db FROM mem_branches "
+                    "WHERE user_id = :uid AND name = :name AND status = 'active'"
+                ),
+                {"uid": user_id, "name": branch},
+            ).fetchone()
         if not row:
             # Branch gone (deleted externally), reset to main silently.
             self._set_active_branch(user_id, "main")
@@ -533,17 +716,29 @@ class EmbeddedBackend(MemoryBackend):
             return self._engine.url
         # Dev mode: engine lives inside SessionLocal.
         from memoria.api.database import SessionLocal
+
         return SessionLocal.kw["bind"].url
 
     def snapshot_create(self, user_id: str, name: str, description: str) -> dict:
         safe = self._sanitize_name(name)
         with self._db_factory() as db:
-            cnt = db.execute(text("SELECT COUNT(*) FROM mo_catalog.mo_snapshots")).scalar() or 0
+            cnt = (
+                db.execute(
+                    text("SELECT COUNT(*) FROM mo_catalog.mo_snapshots")
+                ).scalar()
+                or 0
+            )
         if cnt >= self.MAX_USER_SNAPSHOTS:
-            return {"error": f"Snapshot limit reached ({self.MAX_USER_SNAPSHOTS}). Delete old snapshots first."}
+            return {
+                "error": f"Snapshot limit reached ({self.MAX_USER_SNAPSHOTS}). Delete old snapshots first."
+            }
         snap_name = f"mem_snap_{safe}"
         info = self._git().create_snapshot(snap_name)
-        return {"name": name, "snapshot_name": snap_name, "timestamp": str(info.get("timestamp", ""))}
+        return {
+            "name": name,
+            "snapshot_name": snap_name,
+            "timestamp": str(info.get("timestamp", "")),
+        }
 
     def snapshot_list(self, user_id: str) -> list[dict]:
         all_snaps = self._git().list_snapshots()
@@ -551,15 +746,32 @@ class EmbeddedBackend(MemoryBackend):
         for s in all_snaps:
             sname = s["snapshot_name"]
             if sname.startswith("mem_snap_") or sname.startswith("mem_milestone_"):
-                display = sname.replace("mem_snap_", "").replace("mem_milestone_", "auto:")
-                result.append({"name": display, "snapshot_name": sname, "timestamp": str(s.get("timestamp", ""))})
+                display = sname.replace("mem_snap_", "").replace(
+                    "mem_milestone_", "auto:"
+                )
+                result.append(
+                    {
+                        "name": display,
+                        "snapshot_name": sname,
+                        "timestamp": str(s.get("timestamp", "")),
+                    }
+                )
         return sorted(result, key=lambda x: x["timestamp"], reverse=True)
 
     def snapshot_rollback(self, user_id: str, name: str) -> dict:
         safe = self._sanitize_name(name)
-        snap_name = name if name.startswith("mem_snap_") or name.startswith("mem_milestone_") else f"mem_snap_{safe}"
+        snap_name = (
+            name
+            if name.startswith("mem_snap_") or name.startswith("mem_milestone_")
+            else f"mem_snap_{safe}"
+        )
         git = self._git()
-        for table in ("mem_memories", "memory_graph_nodes", "memory_graph_edges", "mem_edit_log"):
+        for table in (
+            "mem_memories",
+            "memory_graph_nodes",
+            "memory_graph_edges",
+            "mem_edit_log",
+        ):
             try:
                 git.restore_table_from_snapshot(table, snap_name)
             except Exception as e:
@@ -568,35 +780,60 @@ class EmbeddedBackend(MemoryBackend):
                 logger.debug("Rollback table %s skipped: %s", table, e)
         return {"rolled_back_to": snap_name}
 
-    def branch_create(self, user_id: str, name: str, from_snapshot: str | None, from_timestamp: str | None = None) -> dict:
+    def branch_create(
+        self,
+        user_id: str,
+        name: str,
+        from_snapshot: str | None,
+        from_timestamp: str | None = None,
+    ) -> dict:
         if from_snapshot and from_timestamp:
             return {"error": "Specify from_snapshot or from_timestamp, not both."}
         safe = self._sanitize_name(name)
 
         # Global branch limit (not per-user). Prevents resource exhaustion across all users.
         with self._db_factory() as db:
-            active = db.execute(text("SELECT COUNT(*) FROM mem_branches WHERE status = 'active'")).scalar() or 0
+            active = (
+                db.execute(
+                    text("SELECT COUNT(*) FROM mem_branches WHERE status = 'active'")
+                ).scalar()
+                or 0
+            )
         if active >= self.MAX_USER_BRANCHES:
-            return {"error": f"Branch limit reached ({self.MAX_USER_BRANCHES}). Delete old branches first."}
+            return {
+                "error": f"Branch limit reached ({self.MAX_USER_BRANCHES}). Delete old branches first."
+            }
 
         # Duplicate check: reject if branch with same name already exists (active or deleted).
         # This prevents name reuse confusion. Deleted branches are soft-deleted and can be purged later.
         with self._db_factory() as db:
-            dup = db.execute(text(
-                "SELECT branch_id FROM mem_branches WHERE user_id = :uid AND name = :name AND status != 'purged'"
-            ), {"uid": user_id, "name": safe}).fetchone()
+            dup = db.execute(
+                text(
+                    "SELECT branch_id FROM mem_branches WHERE user_id = :uid AND name = :name AND status != 'purged'"
+                ),
+                {"uid": user_id, "name": safe},
+            ).fetchone()
         if dup:
-            return {"error": f"Branch '{safe}' already exists or was recently deleted. Use a different name."}
+            return {
+                "error": f"Branch '{safe}' already exists or was recently deleted. Use a different name."
+            }
 
         snap = from_snapshot
-        if snap and not snap.startswith("mem_snap_") and not snap.startswith("mem_milestone_"):
+        if (
+            snap
+            and not snap.startswith("mem_snap_")
+            and not snap.startswith("mem_milestone_")
+        ):
             snap = f"mem_snap_{self._sanitize_name(snap)}"
 
         # Validate timestamp: within last 30 minutes
         if from_timestamp:
             from datetime import datetime, timedelta, timezone
+
             try:
-                ts = datetime.strptime(from_timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                ts = datetime.strptime(from_timestamp, "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=timezone.utc
+                )
             except ValueError:
                 return {"error": "from_timestamp must be 'YYYY-MM-DD HH:MM:SS'"}
             now = datetime.now(timezone.utc)
@@ -606,6 +843,7 @@ class EmbeddedBackend(MemoryBackend):
                 return {"error": "from_timestamp must be within the last 30 minutes"}
 
         from memoria.core.utils.id_generator import generate_id
+
         branch_id = generate_id()
         branch_db = f"mem_br_{branch_id}"
         src_db = self._source_db_name()
@@ -631,29 +869,41 @@ class EmbeddedBackend(MemoryBackend):
         try:
             # Branch tables + INSERT mem_branches in one commit
             from matrixone.branch_builder import create_table_branch
+
             with self._db_factory() as db:
                 for table in self._BRANCH_TABLES:
                     try:
                         if snap_name:
-                            stmt = create_table_branch(f"{branch_db}.{table}").from_table(
-                                f"{src_db}.{table}", snapshot=snap_name
-                            )
+                            stmt = create_table_branch(
+                                f"{branch_db}.{table}"
+                            ).from_table(f"{src_db}.{table}", snapshot=snap_name)
                             db.execute(text(str(stmt)))
                         else:
                             # timestamp mode — SDK doesn't support yet
-                            db.execute(text(
-                                f"data branch create table {branch_db}.{table} "
-                                f'from {src_db}.{table}{{timestamp="{from_timestamp}"}}'
-                            ))
+                            db.execute(
+                                text(
+                                    f"data branch create table {branch_db}.{table} "
+                                    f'from {src_db}.{table}{{timestamp="{from_timestamp}"}}'
+                                )
+                            )
                     except Exception as e:
                         if table == "mem_memories":
                             raise
                         logger.debug("Branch table %s failed: %s", table, e)
                 base_label = snap_name or from_timestamp or "current"
-                db.execute(text(
-                    "INSERT INTO mem_branches (branch_id, user_id, name, branch_db, base_snapshot, status, created_at) "
-                    "VALUES (:bid, :uid, :name, :bdb, :snap, 'active', NOW())"
-                ), {"bid": branch_id, "uid": user_id, "name": safe, "bdb": branch_db, "snap": base_label})
+                db.execute(
+                    text(
+                        "INSERT INTO mem_branches (branch_id, user_id, name, branch_db, base_snapshot, status, created_at) "
+                        "VALUES (:bid, :uid, :name, :bdb, :snap, 'active', NOW())"
+                    ),
+                    {
+                        "bid": branch_id,
+                        "uid": user_id,
+                        "name": safe,
+                        "bdb": branch_db,
+                        "snap": base_label,
+                    },
+                )
                 db.commit()
         except Exception:
             with self._db_factory() as db:
@@ -666,15 +916,26 @@ class EmbeddedBackend(MemoryBackend):
 
     def branch_list(self, user_id: str) -> list[dict]:
         with self._db_factory() as db:
-            rows = db.execute(text(
-                "SELECT branch_id, name, branch_db, created_at "
-                "FROM mem_branches WHERE user_id = :uid AND status = 'active' "
-                "ORDER BY created_at"
-            ), {"uid": user_id}).fetchall()
+            rows = db.execute(
+                text(
+                    "SELECT branch_id, name, branch_db, created_at "
+                    "FROM mem_branches WHERE user_id = :uid AND status = 'active' "
+                    "ORDER BY created_at"
+                ),
+                {"uid": user_id},
+            ).fetchall()
         active = self._get_active_branch(user_id)  # Call once, not per row
-        result = [{"name": "main", "branch_db": self._source_db_name(), "active": active == "main"}]
+        result = [
+            {
+                "name": "main",
+                "branch_db": self._source_db_name(),
+                "active": active == "main",
+            }
+        ]
         for r in rows:
-            result.append({"name": r.name, "branch_db": r.branch_db, "active": active == r.name})
+            result.append(
+                {"name": r.name, "branch_db": r.branch_db, "active": active == r.name}
+            )
         return result
 
     def branch_checkout(self, user_id: str, name: str) -> dict:
@@ -682,9 +943,12 @@ class EmbeddedBackend(MemoryBackend):
             self._set_active_branch(user_id, "main")
             return {"active_branch": "main"}
         with self._db_factory() as db:
-            row = db.execute(text(
-                "SELECT name FROM mem_branches WHERE user_id = :uid AND name = :name AND status = 'active'"
-            ), {"uid": user_id, "name": name}).fetchone()
+            row = db.execute(
+                text(
+                    "SELECT name FROM mem_branches WHERE user_id = :uid AND name = :name AND status = 'active'"
+                ),
+                {"uid": user_id, "name": name},
+            ).fetchone()
         if not row:
             return {"error": f"Branch '{name}' not found"}
         self._set_active_branch(user_id, name)
@@ -694,16 +958,20 @@ class EmbeddedBackend(MemoryBackend):
         if name == "main":
             return {"error": "Cannot delete main"}
         with self._db_factory() as db:
-            row = db.execute(text(
-                "SELECT branch_id, branch_db FROM mem_branches "
-                "WHERE user_id = :uid AND name = :name AND status = 'active'"
-            ), {"uid": user_id, "name": name}).fetchone()
+            row = db.execute(
+                text(
+                    "SELECT branch_id, branch_db FROM mem_branches "
+                    "WHERE user_id = :uid AND name = :name AND status = 'active'"
+                ),
+                {"uid": user_id, "name": name},
+            ).fetchone()
         if not row:
             return {"error": f"Branch '{name}' not found"}
 
         # delete_table_branch + mark deleted in one commit
         try:
             from matrixone.branch_builder import delete_table_branch
+
             with self._db_factory() as db:
                 for table in self._BRANCH_TABLES:
                     try:
@@ -711,9 +979,12 @@ class EmbeddedBackend(MemoryBackend):
                         db.execute(text(str(stmt)))
                     except Exception:
                         pass
-                db.execute(text(
-                    "UPDATE mem_branches SET status = 'deleted', updated_at = NOW() WHERE branch_id = :bid"
-                ), {"bid": row.branch_id})
+                db.execute(
+                    text(
+                        "UPDATE mem_branches SET status = 'deleted', updated_at = NOW() WHERE branch_id = :bid"
+                    ),
+                    {"bid": row.branch_id},
+                )
                 db.commit()
         except Exception:
             logger.warning("Failed to delete branch tables %s", row.branch_db)
@@ -740,46 +1011,63 @@ class EmbeddedBackend(MemoryBackend):
         Errors are logged but don't fail the merge — we fall back to conservative merge.
         """
         from matrixone.branch_builder import diff_table_branch
+
         try:
-            stmt_count = diff_table_branch(f"{branch_db}.mem_memories").against(
-                f"{src_db}.mem_memories"
-            ).output_count()
+            stmt_count = (
+                diff_table_branch(f"{branch_db}.mem_memories")
+                .against(f"{src_db}.mem_memories")
+                .output_count()
+            )
             with self._db_factory() as db:
                 db.commit()
                 total = db.execute(text(str(stmt_count))).scalar() or 0
             if total == 0 or limit == 0:
                 return total, []
-            stmt_rows = diff_table_branch(f"{branch_db}.mem_memories").against(
-                f"{src_db}.mem_memories"
-            ).output_limit(limit)
+            stmt_rows = (
+                diff_table_branch(f"{branch_db}.mem_memories")
+                .against(f"{src_db}.mem_memories")
+                .output_limit(limit)
+            )
             with self._db_factory() as db:
                 db.commit()
                 rows = db.execute(text(str(stmt_rows))).fetchall()
             return total, rows
         except Exception as e:
-            logger.warning("diff_table_branch failed: %s. Falling back to conservative merge.", e)
+            logger.warning(
+                "diff_table_branch failed: %s. Falling back to conservative merge.", e
+            )
             return 0, []
 
     def _resolve_branch(self, user_id: str, name: str):
         """Lookup active branch. Returns (branch_db, error_dict)."""
         with self._db_factory() as db:
-            row = db.execute(text(
-                "SELECT branch_id, branch_db FROM mem_branches "
-                "WHERE user_id = :uid AND name = :name AND status = 'active'"
-            ), {"uid": user_id, "name": name}).fetchone()
+            row = db.execute(
+                text(
+                    "SELECT branch_id, branch_db FROM mem_branches "
+                    "WHERE user_id = :uid AND name = :name AND status = 'active'"
+                ),
+                {"uid": user_id, "name": name},
+            ).fetchone()
         if not row:
             return None, {"error": f"Branch '{name}' not found"}
         # Verify branch DB exists
         with self._db_factory() as db:
-            exists = db.execute(text(
-                "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = :db"
-            ), {"db": row.branch_db}).scalar()
+            exists = db.execute(
+                text(
+                    "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = :db"
+                ),
+                {"db": row.branch_db},
+            ).scalar()
         if not exists:
             return None, {"error": f"Branch DB '{row.branch_db}' no longer exists"}
         return row.branch_db, None
 
-    _MAX_MERGE_CHANGES: ClassVar[int] = 5000  # Safety limit: prevent accidental large merges.
-    _CONFLICT_COSINE_THRESHOLD: ClassVar[float] = 0.9  # Single source of truth for conflict detection threshold.
+    _MAX_MERGE_CHANGES: ClassVar[int] = (
+        5000  # Safety limit: prevent accidental large merges.
+    )
+    _CONFLICT_COSINE_THRESHOLD: ClassVar[float] = (
+        0.9  # Single source of truth for conflict detection threshold.
+    )
 
     def branch_merge(self, user_id: str, source: str, strategy: str) -> dict:
         """Merge branch into main. All SQL — no rows pulled to Python.
@@ -804,7 +1092,9 @@ class EmbeddedBackend(MemoryBackend):
         # We never short-circuit here; graph nodes/edges are always merged below.
         total, _ = self._get_diff_rows(branch_db, src_db, limit=0)
         if total > self._MAX_MERGE_CHANGES:
-            return {"error": f"Too many changes ({total}). Max {self._MAX_MERGE_CHANGES}. Reduce branch scope."}
+            return {
+                "error": f"Too many changes ({total}). Max {self._MAX_MERGE_CHANGES}. Reduce branch scope."
+            }
 
         with self._db_factory() as db:
             # 2. Bulk INSERT non-conflicting new memories (one SQL).
@@ -812,7 +1102,8 @@ class EmbeddedBackend(MemoryBackend):
             # and so mem_edit_log.target_ids references remain valid.
             # Use result.rowcount — avoids a redundant COUNT(*) that would repeat
             # the same expensive cosine scan.
-            insert_result = db.execute(text(f"""
+            insert_result = db.execute(
+                text(f"""
                 INSERT INTO mem_memories (memory_id, user_id, content, memory_type,
                     initial_confidence, trust_tier, embedding, source_event_ids,
                     is_active, observed_at, created_at, updated_at)
@@ -831,8 +1122,10 @@ class EmbeddedBackend(MemoryBackend):
                     AND b.embedding IS NOT NULL AND m.embedding IS NOT NULL
                     AND cosine_similarity(m.embedding, b.embedding) > :threshold
                 )
-            """), {"uid": user_id, "threshold": self._CONFLICT_COSINE_THRESHOLD})
-            inserted = insert_result.rowcount
+            """),
+                {"uid": user_id, "threshold": self._CONFLICT_COSINE_THRESHOLD},
+            )
+            inserted = insert_result.rowcount  # type: ignore[attr-defined]
 
             # 3. Handle conflicts
             replaced = 0
@@ -849,12 +1142,16 @@ class EmbeddedBackend(MemoryBackend):
                     AND cosine_similarity(m.embedding, b.embedding) > :threshold
                 )
             """
-            conflict_count = db.execute(
-                text(f"SELECT COUNT(*) {conflict_where}"),
-                {"uid": user_id, "threshold": self._CONFLICT_COSINE_THRESHOLD}
-            ).scalar() or 0
+            conflict_count = (
+                db.execute(
+                    text(f"SELECT COUNT(*) {conflict_where}"),
+                    {"uid": user_id, "threshold": self._CONFLICT_COSINE_THRESHOLD},
+                ).scalar()
+                or 0
+            )
             if strategy == "replace" and conflict_count > 0:
-                db.execute(text(f"""
+                db.execute(
+                    text(f"""
                     UPDATE mem_memories m
                     SET m.content = (
                         SELECT b.content FROM `{branch_db}`.mem_memories b
@@ -884,14 +1181,17 @@ class EmbeddedBackend(MemoryBackend):
                         AND cosine_similarity(m.embedding, b.embedding) > :threshold
                         AND NOT EXISTS (SELECT 1 FROM mem_memories m2 WHERE m2.memory_id = b.memory_id AND m2.is_active = 1)
                     )
-                """), {"uid": user_id, "threshold": self._CONFLICT_COSINE_THRESHOLD})
+                """),
+                    {"uid": user_id, "threshold": self._CONFLICT_COSINE_THRESHOLD},
+                )
                 replaced = conflict_count
             else:
                 skipped = conflict_count
 
             # 4. Merge graph nodes (append only — skip existing node_ids).
             # Use INSERT+rowcount, not COUNT+INSERT, to avoid TOCTOU and double scan.
-            node_result = db.execute(text(f"""
+            node_result = db.execute(
+                text(f"""
                 INSERT INTO memory_graph_nodes (
                     node_id, user_id, node_type, content, entity_type, embedding,
                     event_id, memory_id, session_id,
@@ -912,12 +1212,15 @@ class EmbeddedBackend(MemoryBackend):
                 AND NOT EXISTS (
                     SELECT 1 FROM memory_graph_nodes m WHERE m.node_id = b.node_id
                 )
-            """), {"uid": user_id})
-            graph_nodes_merged = node_result.rowcount
+            """),
+                {"uid": user_id},
+            )
+            graph_nodes_merged = node_result.rowcount  # type: ignore[attr-defined]
 
             # 5. Merge graph edges (append only — skip existing src+tgt+type).
             # Same INSERT+rowcount pattern.
-            edge_result = db.execute(text(f"""
+            edge_result = db.execute(
+                text(f"""
                 INSERT INTO memory_graph_edges (
                     source_id, target_id, edge_type, weight, user_id
                 )
@@ -931,8 +1234,10 @@ class EmbeddedBackend(MemoryBackend):
                     AND m.target_id = b.target_id
                     AND m.edge_type = b.edge_type
                 )
-            """), {"uid": user_id})
-            graph_edges_merged = edge_result.rowcount
+            """),
+                {"uid": user_id},
+            )
+            graph_edges_merged = edge_result.rowcount  # type: ignore[attr-defined]
 
             db.commit()
 
@@ -946,7 +1251,9 @@ class EmbeddedBackend(MemoryBackend):
             "source": source,
         }
 
-    def _detect_conflicts(self, branch_db: str, user_id: str, memory_ids: list[str]) -> set[str]:
+    def _detect_conflicts(
+        self, branch_db: str, user_id: str, memory_ids: list[str]
+    ) -> set[str]:
         """Find branch memories that semantically conflict with main (cosine > 0.9).
 
         Uses a single SQL query with JOIN to batch-check all candidate IDs
@@ -961,7 +1268,8 @@ class EmbeddedBackend(MemoryBackend):
             params[f"id{i}"] = mid
         try:
             with self._db_factory() as db:
-                rows = db.execute(text(f"""
+                rows = db.execute(
+                    text(f"""
                     SELECT DISTINCT b.memory_id
                     FROM `{branch_db}`.mem_memories b
                     JOIN mem_memories m
@@ -971,7 +1279,9 @@ class EmbeddedBackend(MemoryBackend):
                       AND cosine_similarity(m.embedding, b.embedding) > :threshold
                     WHERE b.memory_id IN ({placeholders})
                       AND b.embedding IS NOT NULL
-                """), {**params, "threshold": self._CONFLICT_COSINE_THRESHOLD}).fetchall()
+                """),
+                    {**params, "threshold": self._CONFLICT_COSINE_THRESHOLD},
+                ).fetchall()
             return {r.memory_id for r in rows}
         except Exception as e:
             logger.warning("_detect_conflicts failed: %s", e)
@@ -1019,9 +1329,13 @@ class EmbeddedBackend(MemoryBackend):
         # Batch semantic conflict detection
         conflict_ids: set[str] = set()
         if inserts_with_emb_ids:
-            conflict_ids = self._detect_conflicts(branch_db, user_id, inserts_with_emb_ids)
+            conflict_ids = self._detect_conflicts(
+                branch_db, user_id, inserts_with_emb_ids
+            )
         for entry in inserts_with_emb_entries:
-            entry["semantic"] = "conflict" if entry["memory_id"] in conflict_ids else "new"
+            entry["semantic"] = (
+                "conflict" if entry["memory_id"] in conflict_ids else "new"
+            )
             changes.append(entry)
 
         summary: dict[str, int] = {}
@@ -1037,20 +1351,35 @@ class EmbeddedBackend(MemoryBackend):
             "changes": changes,
         }
 
+
 class HTTPBackend(MemoryBackend):
     """Proxy to memory service REST API — for remote mode."""
 
     def __init__(self, api_url: str, token: str | None = None) -> None:
         import httpx
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
-        self._client = httpx.Client(base_url=api_url.rstrip("/"), headers=headers, timeout=30)
 
-    def store(self, user_id: str, content: str, memory_type: str, session_id: str | None) -> dict:
-        r = self._client.post("/v1/memories", json={"content": content, "memory_type": memory_type, "session_id": session_id})
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self._client = httpx.Client(
+            base_url=api_url.rstrip("/"), headers=headers, timeout=30
+        )
+
+    def store(
+        self, user_id: str, content: str, memory_type: str, session_id: str | None
+    ) -> dict:
+        r = self._client.post(
+            "/v1/memories",
+            json={
+                "content": content,
+                "memory_type": memory_type,
+                "session_id": session_id,
+            },
+        )
         r.raise_for_status()
         return r.json()
 
-    def retrieve(self, user_id: str, query: str, top_k: int, session_id: str | None = None) -> list[dict]:
+    def retrieve(
+        self, user_id: str, query: str, top_k: int, session_id: str | None = None
+    ) -> list[dict]:
         payload: dict[str, Any] = {"query": query, "top_k": top_k}
         # Only include session_id in payload if provided (not None).
         # This allows the remote API to distinguish between "no session context" (None)
@@ -1061,19 +1390,34 @@ class HTTPBackend(MemoryBackend):
         r.raise_for_status()
         return r.json()
 
-    def correct(self, user_id: str, memory_id: str, new_content: str, reason: str) -> dict:
-        r = self._client.put(f"/v1/memories/{memory_id}/correct", json={"new_content": new_content, "reason": reason})
+    def correct(
+        self, user_id: str, memory_id: str, new_content: str, reason: str
+    ) -> dict:
+        r = self._client.put(
+            f"/v1/memories/{memory_id}/correct",
+            json={"new_content": new_content, "reason": reason},
+        )
         r.raise_for_status()
         return r.json()
 
-    def correct_by_query(self, user_id: str, query: str, new_content: str, reason: str) -> dict:
-        r = self._client.post("/v1/memories/correct", json={"query": query, "new_content": new_content, "reason": reason})
+    def correct_by_query(
+        self, user_id: str, query: str, new_content: str, reason: str
+    ) -> dict:
+        r = self._client.post(
+            "/v1/memories/correct",
+            json={"query": query, "new_content": new_content, "reason": reason},
+        )
         if r.status_code == 404:
-            return {"error": "no_match", "message": f"No memory found matching '{query}'"}
+            return {
+                "error": "no_match",
+                "message": f"No memory found matching '{query}'",
+            }
         r.raise_for_status()
         return r.json()
 
-    def purge(self, user_id: str, memory_id: str | None, topic: str | None, reason: str) -> dict:
+    def purge(
+        self, user_id: str, memory_id: str | None, topic: str | None, reason: str
+    ) -> dict:
         if topic:
             # Search then purge each match.  Collect partial results so a
             # mid-batch failure doesn't lose the count of already-purged items.
@@ -1096,7 +1440,9 @@ class HTTPBackend(MemoryBackend):
                 result["errors"] = errors
             return result
         elif memory_id:
-            r = self._client.delete(f"/v1/memories/{memory_id}", params={"reason": reason})
+            r = self._client.delete(
+                f"/v1/memories/{memory_id}", params={"reason": reason}
+            )
             r.raise_for_status()
             return r.json()
         return {"purged": 0}
@@ -1107,22 +1453,30 @@ class HTTPBackend(MemoryBackend):
         return r.json()
 
     def search(self, user_id: str, query: str, top_k: int) -> list[dict]:
-        r = self._client.post("/v1/memories/search", json={"query": query, "top_k": top_k})
+        r = self._client.post(
+            "/v1/memories/search", json={"query": query, "top_k": top_k}
+        )
         r.raise_for_status()
         return r.json()
 
     def governance(self, user_id: str, force: bool = False) -> dict:
-        r = self._client.post("/v1/memories/governance", json={"user_id": user_id, "force": force})
+        r = self._client.post(
+            "/v1/memories/governance", json={"user_id": user_id, "force": force}
+        )
         r.raise_for_status()
         return r.json()
 
     def consolidate(self, user_id: str, force: bool = False) -> dict:
-        r = self._client.post("/v1/memories/consolidate", json={"user_id": user_id, "force": force})
+        r = self._client.post(
+            "/v1/memories/consolidate", json={"user_id": user_id, "force": force}
+        )
         r.raise_for_status()
         return r.json()
 
     def reflect(self, user_id: str, force: bool = False) -> dict:
-        r = self._client.post("/v1/memories/reflect", json={"user_id": user_id, "force": force})
+        r = self._client.post(
+            "/v1/memories/reflect", json={"user_id": user_id, "force": force}
+        )
         r.raise_for_status()
         return r.json()
 
@@ -1164,7 +1518,13 @@ class HTTPBackend(MemoryBackend):
     def snapshot_rollback(self, user_id: str, name: str) -> dict:
         return {"error": "Not available via HTTP"}
 
-    def branch_create(self, user_id: str, name: str, from_snapshot: str | None, from_timestamp: str | None = None) -> dict:
+    def branch_create(
+        self,
+        user_id: str,
+        name: str,
+        from_snapshot: str | None,
+        from_timestamp: str | None = None,
+    ) -> dict:
         return {"error": "Not available via HTTP"}
 
     def branch_list(self, user_id: str) -> list[dict]:
@@ -1184,6 +1544,7 @@ class HTTPBackend(MemoryBackend):
 
 
 # ── MCP Server ────────────────────────────────────────────────────────
+
 
 def create_server(backend: MemoryBackend, default_user: str = "default") -> FastMCP:
     """Create MCP server with memory tools."""
@@ -1212,10 +1573,12 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
     def _has_internal_llm() -> bool:
         """Check if Memoria has its own LLM configured."""
         from memoria.core.llm import get_llm_client
+
         return get_llm_client() is not None
 
     def _json_dumps(obj: dict) -> str:
         import json
+
         return json.dumps(obj, ensure_ascii=False)
 
     def _with_warning(msg: str, result: dict) -> str:
@@ -1239,7 +1602,9 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             session_id: Session context (optional).
         """
         result = backend.store(_user(user_id), content, memory_type, session_id)
-        return _with_warning(f"Stored memory {result['memory_id']}: {result['content']}", result)
+        return _with_warning(
+            f"Stored memory {result['memory_id']}: {result['content']}", result
+        )
 
     @server.tool()
     def memory_retrieve(
@@ -1264,7 +1629,9 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         results = backend.retrieve(uid, query, top_k, session_id=session_id)
         parts: list[str] = []
         if not results:
-            parts.append("No relevant memories found. Try memory_search with a broader query to see all stored memories.")
+            parts.append(
+                "No relevant memories found. Try memory_search with a broader query to see all stored memories."
+            )
         else:
             lines = [f"- [{r.get('type', 'fact')}] {r['content']}" for r in results]
             parts.append(f"Found {len(results)} memories:\n" + "\n".join(lines))
@@ -1337,7 +1704,10 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             user_id: User ID (optional).
         """
         result = backend.profile(_user(user_id))
-        profile = result.get("profile") or "No profile available yet. Use memory_search to browse all stored memories."
+        profile = (
+            result.get("profile")
+            or "No profile available yet. Use memory_search to browse all stored memories."
+        )
         return f"Profile for {result['user_id']}:\n{profile}"
 
     @server.tool()
@@ -1356,7 +1726,10 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         results = backend.search(_user(user_id), query, top_k)
         if not results:
             return "No memories found."
-        lines = [f"- [{r.get('type', 'fact')}] ({r['memory_id']}) {r['content']}" for r in results]
+        lines = [
+            f"- [{r.get('type', 'fact')}] ({r['memory_id']}) {r['content']}"
+            for r in results
+        ]
         return f"Found {len(results)} memories:\n" + "\n".join(lines)
 
     @server.tool()
@@ -1438,8 +1811,12 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
                 return "No reflection candidates found — not enough cross-session memory patterns yet."
             parts = []
             for i, c in enumerate(clusters, 1):
-                mems = "\n".join(f"  - [{m['type']}] {m['content']}" for m in c["memories"])
-                parts.append(f"Cluster {i} ({c['signal']}, importance={c['importance']}):\n{mems}")
+                mems = "\n".join(
+                    f"  - [{m['type']}] {m['content']}" for m in c["memories"]
+                )
+                parts.append(
+                    f"Cluster {i} ({c['signal']}, importance={c['importance']}):\n{mems}"
+                )
             return (
                 "Here are memory clusters for reflection. Synthesize 1-2 insights per cluster, "
                 "then store each via memory_store(content=..., memory_type='semantic').\n\n"
@@ -1481,23 +1858,33 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             memories = result.get("memories", [])
             existing = result.get("existing_entities", [])
             if not memories:
-                return _json_dumps({"status": "complete", "unlinked": 0, "message": "All memories already have entity links."})
-            return _json_dumps({
-                "status": "candidates",
-                "unlinked": len(memories),
-                "memories": memories,
-                "existing_entities": existing,
-                "instruction": "Extract named entities (people, tech, projects, repos) from each memory, then call memory_link_entities.",
-            })
+                return _json_dumps(
+                    {
+                        "status": "complete",
+                        "unlinked": 0,
+                        "message": "All memories already have entity links.",
+                    }
+                )
+            return _json_dumps(
+                {
+                    "status": "candidates",
+                    "unlinked": len(memories),
+                    "memories": memories,
+                    "existing_entities": existing,
+                    "instruction": "Extract named entities (people, tech, projects, repos) from each memory, then call memory_link_entities.",
+                }
+            )
         result = backend.extract_entities(uid)
         if "error" in result:
             return _json_dumps({"status": "error", "error": result["error"]})
-        return _json_dumps({
-            "status": "done",
-            "total_memories": result["total_memories"],
-            "entities_found": result["entities_found"],
-            "edges_created": result["edges_created"],
-        })
+        return _json_dumps(
+            {
+                "status": "done",
+                "total_memories": result["total_memories"],
+                "entities_found": result["entities_found"],
+                "edges_created": result["edges_created"],
+            }
+        )
 
     @server.tool()
     def memory_link_entities(
@@ -1514,22 +1901,49 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             user_id: User ID (optional).
         """
         import json as _json
+
         try:
             parsed = _json.loads(entities)
         except (ValueError, TypeError):
-            return _json_dumps({"status": "error", "error": "Invalid JSON", "expected_format": [{"memory_id": "...", "entities": [{"name": "...", "type": "..."}]}]})
-        if not isinstance(parsed, list) or not all(isinstance(x, dict) and "memory_id" in x for x in parsed):
-            return _json_dumps({"status": "error", "error": "Invalid format", "expected_format": [{"memory_id": "...", "entities": [{"name": "...", "type": "..."}]}]})
+            return _json_dumps(
+                {
+                    "status": "error",
+                    "error": "Invalid JSON",
+                    "expected_format": [
+                        {
+                            "memory_id": "...",
+                            "entities": [{"name": "...", "type": "..."}],
+                        }
+                    ],
+                }
+            )
+        if not isinstance(parsed, list) or not all(
+            isinstance(x, dict) and "memory_id" in x for x in parsed
+        ):
+            return _json_dumps(
+                {
+                    "status": "error",
+                    "error": "Invalid format",
+                    "expected_format": [
+                        {
+                            "memory_id": "...",
+                            "entities": [{"name": "...", "type": "..."}],
+                        }
+                    ],
+                }
+            )
         try:
             result = backend.link_entities(_user(user_id), parsed)
         except Exception as e:
             return _json_dumps({"status": "error", "error": str(e)})
-        return _json_dumps({
-            "status": "done",
-            "entities_created": result["entities_created"],
-            "entities_reused": result.get("entities_reused", 0),
-            "edges_created": result["edges_created"],
-        })
+        return _json_dumps(
+            {
+                "status": "done",
+                "entities_created": result["entities_created"],
+                "entities_reused": result.get("entities_reused", 0),
+                "edges_created": result["edges_created"],
+            }
+        )
 
     @server.tool()
     def memory_rebuild_index(
@@ -1618,7 +2032,9 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         """
         if from_snapshot and from_timestamp:
             return "Error: specify from_snapshot or from_timestamp, not both."
-        result = backend.branch_create(_user(user_id), name, from_snapshot, from_timestamp)
+        result = backend.branch_create(
+            _user(user_id), name, from_snapshot, from_timestamp
+        )
         if "error" in result:
             return f"Error: {result['error']}"
         src = ""
@@ -1658,7 +2074,10 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         if not memories:
             return f"Switched to branch '{name}'. No memories on this branch yet."
         lines = [f"- [{r.get('type', 'fact')}] {r['content']}" for r in memories]
-        return f"Switched to branch '{name}'. {len(memories)} memories on this branch:\n" + "\n".join(lines)
+        return (
+            f"Switched to branch '{name}'. {len(memories)} memories on this branch:\n"
+            + "\n".join(lines)
+        )
 
     @server.tool()
     def memory_branch_delete(name: str, user_id: str | None = None) -> str:
@@ -1732,12 +2151,15 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
 
 # ── Entry point ───────────────────────────────────────────────────────
 
+
 def main():
     import sys
 
     parser = argparse.ArgumentParser(description="Memoria Lite — MCP memory server")
     parser.add_argument("--api-url", help="Memory service API URL (remote mode)")
-    parser.add_argument("--db-url", help="Database URL for embedded mode (or set MEMORIA_DB_URL)")
+    parser.add_argument(
+        "--db-url", help="Database URL for embedded mode (or set MEMORIA_DB_URL)"
+    )
     parser.add_argument("--token", help="Auth token for remote mode")
     parser.add_argument("--user", default="default", help="Default user ID")
     parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio")
@@ -1755,6 +2177,7 @@ def main():
         db_url = args.db_url or os.environ.get("MEMORIA_DB_URL")
         if not db_url:
             from memoria.schema import DEFAULT_DB_URL
+
             db_url = DEFAULT_DB_URL
         backend = EmbeddedBackend(db_url=db_url)
 

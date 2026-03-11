@@ -56,7 +56,9 @@ class SnapshotResponse(BaseModel):
     timestamp: str
 
 
-@router.post("/snapshots", response_model=SnapshotResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/snapshots", response_model=SnapshotResponse, status_code=status.HTTP_201_CREATED
+)
 def create_snapshot(
     req: CreateSnapshotRequest,
     user_id: str = Depends(get_current_user_id),
@@ -75,22 +77,32 @@ def create_snapshot(
     snap_name = _snap_name(user_id, req.name)
 
     # Check uniqueness
-    if db.query(SnapshotRegistry.snapshot_name).filter_by(snapshot_name=snap_name).first():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Snapshot '{req.name}' already exists")
+    if (
+        db.query(SnapshotRegistry.snapshot_name)
+        .filter_by(snapshot_name=snap_name)
+        .first()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Snapshot '{req.name}' already exists",
+        )
 
     # Create MatrixOne native snapshot
     info = _git(lambda: db).create_snapshot(snap_name)
 
     # Register
     reg = SnapshotRegistry(
-        snapshot_name=snap_name, user_id=user_id,
-        display_name=req.name, description=req.description or None,
+        snapshot_name=snap_name,
+        user_id=user_id,
+        display_name=req.name,
+        description=req.description or None,
     )
     db.add(reg)
     db.commit()
 
     return SnapshotResponse(
-        name=req.name, snapshot_name=snap_name,
+        name=req.name,
+        snapshot_name=snap_name,
         description=req.description or None,
         timestamp=str(info.get("timestamp", "")),
     )
@@ -101,13 +113,22 @@ def list_snapshots(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db_session),
 ):
-    rows = db.query(
-        SnapshotRegistry.display_name, SnapshotRegistry.snapshot_name,
-        SnapshotRegistry.description, SnapshotRegistry.created_at,
-    ).filter_by(user_id=user_id).order_by(SnapshotRegistry.created_at.desc()).limit(200).all()
+    rows = (
+        db.query(
+            SnapshotRegistry.display_name,
+            SnapshotRegistry.snapshot_name,
+            SnapshotRegistry.description,
+            SnapshotRegistry.created_at,
+        )
+        .filter_by(user_id=user_id)
+        .order_by(SnapshotRegistry.created_at.desc())
+        .limit(200)
+        .all()
+    )
     return [
         SnapshotResponse(
-            name=r.display_name, snapshot_name=r.snapshot_name,
+            name=r.display_name,
+            snapshot_name=r.snapshot_name,
             description=r.description,
             timestamp=r.created_at.isoformat() if r.created_at else "",
         )
@@ -129,7 +150,11 @@ def get_snapshot(
     detail: brief (type + truncated content), normal (full content), full (+ confidence).
     """
     snap_name = _snap_name(user_id, name)
-    reg = db.query(SnapshotRegistry.display_name, SnapshotRegistry.description).filter_by(snapshot_name=snap_name, user_id=user_id).first()
+    reg = (
+        db.query(SnapshotRegistry.display_name, SnapshotRegistry.description)
+        .filter_by(snapshot_name=snap_name, user_id=user_id)
+        .first()
+    )
     if reg is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
@@ -151,13 +176,23 @@ def get_snapshot(
     _user = M.user_id == user_id
 
     # Total count
-    total = _exec_snap(db,
-        mo_select(func.count(M.memory_id)).where(_user, _active).with_snapshot(snap_name)
-    ).scalar() or 0
+    total = (
+        _exec_snap(
+            db,
+            mo_select(func.count(M.memory_id))
+            .where(_user, _active)
+            .with_snapshot(snap_name),
+        ).scalar()
+        or 0
+    )
 
     # Type distribution
-    type_dist = _exec_snap(db,
-        mo_select(M.memory_type, func.count()).where(_user, _active).group_by(M.memory_type).with_snapshot(snap_name)
+    type_dist = _exec_snap(
+        db,
+        mo_select(M.memory_type, func.count())
+        .where(_user, _active)
+        .group_by(M.memory_type)
+        .with_snapshot(snap_name),
     ).fetchall()
 
     # Paginated memories
@@ -165,10 +200,14 @@ def get_snapshot(
         cols = (M.memory_id, M.content, M.memory_type, M.initial_confidence)
     else:
         cols = (M.memory_id, M.content, M.memory_type)
-    rows = _exec_snap(db,
-        mo_select(*cols).where(_user, _active)
-        .order_by(M.observed_at.desc()).limit(limit).offset(offset)
-        .with_snapshot(snap_name)
+    rows = _exec_snap(
+        db,
+        mo_select(*cols)
+        .where(_user, _active)
+        .order_by(M.observed_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .with_snapshot(snap_name),
     ).fetchall()
 
     content_limit = 80 if detail == "brief" else (200 if detail == "normal" else 2000)
@@ -176,7 +215,11 @@ def get_snapshot(
     for r in rows:
         m: dict = {"memory_id": r[0], "memory_type": r[2]}
         content = r[1] or ""
-        m["content"] = (content[:content_limit] + " [truncated]") if len(content) > content_limit else content
+        m["content"] = (
+            (content[:content_limit] + " [truncated]")
+            if len(content) > content_limit
+            else content
+        )
         if detail == "full":
             m["confidence"] = r[3]
         memories.append(m)
@@ -203,9 +246,13 @@ def delete_snapshot(
 ):
     snap_name = _snap_name(user_id, name)
     from sqlalchemy.orm import load_only
-    reg = db.query(SnapshotRegistry).options(
-        load_only(SnapshotRegistry.snapshot_name)
-    ).filter_by(snapshot_name=snap_name, user_id=user_id).first()
+
+    reg = (
+        db.query(SnapshotRegistry)
+        .options(load_only(SnapshotRegistry.snapshot_name))
+        .filter_by(snapshot_name=snap_name, user_id=user_id)
+        .first()
+    )
     if reg is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
@@ -226,7 +273,11 @@ def diff_snapshot(
 ):
     """Compare snapshot memories vs current state. Diff computed in DB, not Python."""
     snap_name = _snap_name(user_id, name)
-    if not db.query(SnapshotRegistry.snapshot_name).filter_by(snapshot_name=snap_name, user_id=user_id).first():
+    if (
+        not db.query(SnapshotRegistry.snapshot_name)
+        .filter_by(snapshot_name=snap_name, user_id=user_id)
+        .first()
+    ):
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
     if limit > 200:
@@ -236,45 +287,75 @@ def diff_snapshot(
     _user = M.user_id == user_id
 
     # Counts — single-table, use SDK
-    snap_count = _exec_snap(db,
-        mo_select(func.count(M.memory_id)).where(_user, _active).with_snapshot(snap_name)
-    ).scalar() or 0
+    snap_count = (
+        _exec_snap(
+            db,
+            mo_select(func.count(M.memory_id))
+            .where(_user, _active)
+            .with_snapshot(snap_name),
+        ).scalar()
+        or 0
+    )
 
     curr_count = db.query(func.count(M.memory_id)).filter(_user, _active).scalar() or 0
 
     # LEFT JOIN diff — MatrixOne-specific cross-snapshot join, must stay raw SQL
-    added_rows = db.execute(text(
-        "SELECT c.memory_id, c.content, c.memory_type FROM mem_memories c"
-        f" LEFT JOIN mem_memories {{SNAPSHOT = '{snap_name}'}} s"
-        " ON c.memory_id = s.memory_id AND s.is_active"
-        " WHERE c.user_id = :uid AND c.is_active AND s.memory_id IS NULL"
-        " LIMIT :lim"
-    ), {"uid": user_id, "lim": limit}).fetchall()
+    added_rows = db.execute(
+        text(
+            "SELECT c.memory_id, c.content, c.memory_type FROM mem_memories c"
+            f" LEFT JOIN mem_memories {{SNAPSHOT = '{snap_name}'}} s"
+            " ON c.memory_id = s.memory_id AND s.is_active"
+            " WHERE c.user_id = :uid AND c.is_active AND s.memory_id IS NULL"
+            " LIMIT :lim"
+        ),
+        {"uid": user_id, "lim": limit},
+    ).fetchall()
 
-    removed_rows = db.execute(text(
-        f"SELECT s.memory_id, s.content, s.memory_type FROM mem_memories {{SNAPSHOT = '{snap_name}'}} s"
-        " LEFT JOIN mem_memories c"
-        " ON s.memory_id = c.memory_id AND c.is_active"
-        " WHERE s.user_id = :uid AND s.is_active AND c.memory_id IS NULL"
-        " LIMIT :lim"
-    ), {"uid": user_id, "lim": limit}).fetchall()
+    removed_rows = db.execute(
+        text(
+            f"SELECT s.memory_id, s.content, s.memory_type FROM mem_memories {{SNAPSHOT = '{snap_name}'}} s"
+            " LEFT JOIN mem_memories c"
+            " ON s.memory_id = c.memory_id AND c.is_active"
+            " WHERE s.user_id = :uid AND s.is_active AND c.memory_id IS NULL"
+            " LIMIT :lim"
+        ),
+        {"uid": user_id, "lim": limit},
+    ).fetchall()
 
-    added_count = db.execute(text(
-        "SELECT COUNT(*) FROM mem_memories c"
-        f" LEFT JOIN mem_memories {{SNAPSHOT = '{snap_name}'}} s"
-        " ON c.memory_id = s.memory_id AND s.is_active"
-        " WHERE c.user_id = :uid AND c.is_active AND s.memory_id IS NULL"
-    ), {"uid": user_id}).scalar() or 0
+    added_count = (
+        db.execute(
+            text(
+                "SELECT COUNT(*) FROM mem_memories c"
+                f" LEFT JOIN mem_memories {{SNAPSHOT = '{snap_name}'}} s"
+                " ON c.memory_id = s.memory_id AND s.is_active"
+                " WHERE c.user_id = :uid AND c.is_active AND s.memory_id IS NULL"
+            ),
+            {"uid": user_id},
+        ).scalar()
+        or 0
+    )
 
-    removed_count = db.execute(text(
-        f"SELECT COUNT(*) FROM mem_memories {{SNAPSHOT = '{snap_name}'}} s"
-        " LEFT JOIN mem_memories c"
-        " ON s.memory_id = c.memory_id AND c.is_active"
-        " WHERE s.user_id = :uid AND s.is_active AND c.memory_id IS NULL"
-    ), {"uid": user_id}).scalar() or 0
+    removed_count = (
+        db.execute(
+            text(
+                f"SELECT COUNT(*) FROM mem_memories {{SNAPSHOT = '{snap_name}'}} s"
+                " LEFT JOIN mem_memories c"
+                " ON s.memory_id = c.memory_id AND c.is_active"
+                " WHERE s.user_id = :uid AND s.is_active AND c.memory_id IS NULL"
+            ),
+            {"uid": user_id},
+        ).scalar()
+        or 0
+    )
 
-    added = [{"memory_id": r[0], "content": (r[1] or "")[:200], "memory_type": r[2]} for r in added_rows]
-    removed = [{"memory_id": r[0], "content": (r[1] or "")[:200], "memory_type": r[2]} for r in removed_rows]
+    added = [
+        {"memory_id": r[0], "content": (r[1] or "")[:200], "memory_type": r[2]}
+        for r in added_rows
+    ]
+    removed = [
+        {"memory_id": r[0], "content": (r[1] or "")[:200], "memory_type": r[2]}
+        for r in removed_rows
+    ]
 
     return {
         "snapshot_name": name,

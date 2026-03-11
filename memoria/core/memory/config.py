@@ -39,7 +39,9 @@ class MemoryGovernanceConfig:
     working_memory_stale_hours: int = 2
 
     # ── Confidence decay (per trust tier) ──
-    half_life_t1_days: float = 365.0  # matches TrustTier.T1_VERIFIED.default_half_life_days
+    half_life_t1_days: float = (
+        365.0  # matches TrustTier.T1_VERIFIED.default_half_life_days
+    )
     half_life_t2_days: float = 180.0
     half_life_t3_days: float = 60.0
     half_life_t4_days: float = 30.0
@@ -73,26 +75,39 @@ class MemoryGovernanceConfig:
 
     # ── Distributed: run_daily_all sharding ──
     daily_batch_size: int = 2000
-    shard_index: int = 0       # this worker's shard (0-based)
-    shard_count: int = 1       # total workers (1 = no sharding)
+    shard_index: int = 0  # this worker's shard (0-based)
+    shard_count: int = 1  # total workers (1 = no sharding)
 
     # ── Backend selector ──
     memory_backend: str = "tabular"
 
     def __post_init__(self) -> None:
         """Validate parameter ranges."""
-        for name in ("half_life_t1_days", "half_life_t2_days", "half_life_t3_days", "half_life_t4_days"):
+        for name in (
+            "half_life_t1_days",
+            "half_life_t2_days",
+            "half_life_t3_days",
+            "half_life_t4_days",
+        ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive, got {getattr(self, name)}")
-        for name in ("quarantine_threshold", "pollution_threshold", "contradiction_similarity_threshold",
-                      "cluster_similarity_threshold", "reflection_daily_threshold", "reflection_immediate_threshold"):
+        for name in (
+            "quarantine_threshold",
+            "pollution_threshold",
+            "contradiction_similarity_threshold",
+            "cluster_similarity_threshold",
+            "reflection_daily_threshold",
+            "reflection_immediate_threshold",
+        ):
             v = getattr(self, name)
             if not 0.0 <= v <= 1.0:
                 raise ValueError(f"{name} must be in [0, 1], got {v}")
         if self.shard_count < 1:
             raise ValueError(f"shard_count must be >= 1, got {self.shard_count}")
         if not 0 <= self.shard_index < self.shard_count:
-            raise ValueError(f"shard_index must be in [0, {self.shard_count}), got {self.shard_index}")
+            raise ValueError(
+                f"shard_index must be in [0, {self.shard_count}), got {self.shard_index}"
+            )
 
     @property
     def half_lives(self) -> dict[str, float]:
@@ -122,7 +137,7 @@ class MemoryGovernanceConfig:
             elif f.type == "str":
                 overrides[f.name] = val
             # skip complex types (tuple, etc.) — not env-friendly
-        return cls(**overrides)
+        return cls(**overrides)  # type: ignore[arg-type]
 
 
 # Default config instance — picks up MEM_* env overrides automatically

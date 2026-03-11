@@ -33,24 +33,24 @@ def _env_limit(name: str, default: tuple[int, int]) -> tuple[int, int]:
 
 # Limits: (max_requests, window_seconds)
 _RATE_LIMITS: dict[str, tuple[int, int]] = {
-    "POST:/v1/memories":          _env_limit("STORE",       (300, 60)),
-    "POST:/v1/memories/batch":    _env_limit("BATCH",       (60, 60)),
-    "POST:/v1/memories/correct":  _env_limit("CORRECT",     (120, 60)),
-    "PUT:/v1/memories/":          _env_limit("CORRECT",     (120, 60)),
-    "DELETE:/v1/memories/":       _env_limit("DELETE",      (120, 60)),
-    "POST:/v1/memories/purge":    _env_limit("PURGE",       (30, 60)),
-    "POST:/v1/observe":           _env_limit("OBSERVE",     (120, 60)),
-    "POST:/v1/memories/retrieve": _env_limit("RETRIEVE",    (600, 60)),
-    "POST:/v1/memories/search":   _env_limit("SEARCH",      (600, 60)),
-    "GET:/v1/memories":           _env_limit("LIST",        (300, 60)),
-    "GET:/v1/profiles/":          _env_limit("PROFILE",     (120, 60)),
-    "POST:/v1/consolidate":       _env_limit("CONSOLIDATE", (3, 3600)),
-    "POST:/v1/reflect":           _env_limit("REFLECT",     (2, 7200)),
-    "POST:/v1/snapshots":         _env_limit("SNAP_CREATE", (30, 60)),
-    "GET:/v1/snapshots":          _env_limit("SNAP_READ",   (120, 60)),
-    "DELETE:/v1/snapshots/":      _env_limit("SNAP_DELETE", (30, 60)),
-    "POST:/auth/keys":            _env_limit("AUTH_KEYS",   (20, 60)),
-    "_default":                   _env_limit("DEFAULT",     (1000, 60)),
+    "POST:/v1/memories": _env_limit("STORE", (300, 60)),
+    "POST:/v1/memories/batch": _env_limit("BATCH", (60, 60)),
+    "POST:/v1/memories/correct": _env_limit("CORRECT", (120, 60)),
+    "PUT:/v1/memories/": _env_limit("CORRECT", (120, 60)),
+    "DELETE:/v1/memories/": _env_limit("DELETE", (120, 60)),
+    "POST:/v1/memories/purge": _env_limit("PURGE", (30, 60)),
+    "POST:/v1/observe": _env_limit("OBSERVE", (120, 60)),
+    "POST:/v1/memories/retrieve": _env_limit("RETRIEVE", (600, 60)),
+    "POST:/v1/memories/search": _env_limit("SEARCH", (600, 60)),
+    "GET:/v1/memories": _env_limit("LIST", (300, 60)),
+    "GET:/v1/profiles/": _env_limit("PROFILE", (120, 60)),
+    "POST:/v1/consolidate": _env_limit("CONSOLIDATE", (3, 3600)),
+    "POST:/v1/reflect": _env_limit("REFLECT", (2, 7200)),
+    "POST:/v1/snapshots": _env_limit("SNAP_CREATE", (30, 60)),
+    "GET:/v1/snapshots": _env_limit("SNAP_READ", (120, 60)),
+    "DELETE:/v1/snapshots/": _env_limit("SNAP_DELETE", (30, 60)),
+    "POST:/auth/keys": _env_limit("AUTH_KEYS", (20, 60)),
+    "_default": _env_limit("DEFAULT", (1000, 60)),
 }
 
 
@@ -70,7 +70,9 @@ class _SlidingWindow:
 
 
 # key → (method:path_prefix) → SlidingWindow
-_windows: dict[str, dict[str, _SlidingWindow]] = defaultdict(lambda: defaultdict(_SlidingWindow))
+_windows: dict[str, dict[str, _SlidingWindow]] = defaultdict(
+    lambda: defaultdict(_SlidingWindow)
+)
 _last_cleanup = time.time()
 _CLEANUP_INTERVAL = 300  # purge stale keys every 5 minutes
 
@@ -99,9 +101,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         now = time.time()
         if now - _last_cleanup > _CLEANUP_INTERVAL:
             _last_cleanup = now
-            stale = [k for k, routes in _windows.items() if all(
-                not w.timestamps for w in routes.values()
-            )]
+            stale = [
+                k
+                for k, routes in _windows.items()
+                if all(not w.timestamps for w in routes.values())
+            ]
             for k in stale:
                 del _windows[k]
 
@@ -123,9 +127,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if count > max_req:
             from starlette.responses import JSONResponse
+
             return JSONResponse(
                 status_code=429,
-                content={"detail": f"Rate limit exceeded. Max {max_req} requests per {window}s."},
+                content={
+                    "detail": f"Rate limit exceeded. Max {max_req} requests per {window}s."
+                },
                 headers={"Retry-After": str(window)},
             )
 

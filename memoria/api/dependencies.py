@@ -29,21 +29,36 @@ def get_current_user_id(
         return "__admin__"
 
     key_hash = ApiKey.hash_key(token)
-    row = db.query(ApiKey.key_id, ApiKey.user_id, ApiKey.expires_at).filter(
-        ApiKey.key_hash == key_hash, ApiKey.is_active > 0,
-    ).first()
+    row = (
+        db.query(ApiKey.key_id, ApiKey.user_id, ApiKey.expires_at)
+        .filter(
+            ApiKey.key_hash == key_hash,
+            ApiKey.is_active > 0,
+        )
+        .first()
+    )
     if row is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
+        )
 
     if row.expires_at:
-        exp = row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at.tzinfo is None else row.expires_at
+        exp = (
+            row.expires_at.replace(tzinfo=timezone.utc)
+            if row.expires_at.tzinfo is None
+            else row.expires_at
+        )
         if exp < datetime.now(timezone.utc):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API key expired")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="API key expired"
+            )
 
     # Update last_used_at
     try:
         db.execute(
-            update(ApiKey).where(ApiKey.key_id == row.key_id).values(last_used_at=func.now())
+            update(ApiKey)
+            .where(ApiKey.key_id == row.key_id)
+            .values(last_used_at=func.now())
         )
         db.commit()
     except Exception:
@@ -55,5 +70,7 @@ def get_current_user_id(
 def require_admin(user_id: str = Depends(get_current_user_id)) -> str:
     """Require admin (master key) access."""
     if user_id != "__admin__":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        )
     return user_id

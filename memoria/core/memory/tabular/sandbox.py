@@ -31,7 +31,12 @@ logger = logging.getLogger(__name__)
 class MemorySandbox(DbConsumer):
     """Validate memories in a branch before committing."""
 
-    def __init__(self, db_factory: DbFactory, db_name: str = "dev_agent", metrics: Optional[MemoryMetrics] = None):
+    def __init__(
+        self,
+        db_factory: DbFactory,
+        db_name: str = "dev_agent",
+        metrics: Optional[MemoryMetrics] = None,
+    ):
         super().__init__(db_factory)
         self.db_name = db_name
         self._metrics = metrics or MemoryMetrics()
@@ -57,7 +62,7 @@ class MemorySandbox(DbConsumer):
         """
         start = time.time() if explain else 0
         stats = SandboxStats(enabled=True) if explain else None
-        
+
         if not new_memories:
             if stats:
                 stats.validated = True
@@ -82,7 +87,9 @@ class MemorySandbox(DbConsumer):
             improved = score_branch >= score_main
             logger.debug(
                 "Sandbox validation: main=%.3f branch=%.3f improved=%s",
-                score_main, score_branch, improved,
+                score_main,
+                score_branch,
+                improved,
             )
             if stats:
                 stats.validated = True
@@ -103,9 +110,9 @@ class MemorySandbox(DbConsumer):
     def _create_branch(self, branch_name: str) -> None:
         # branch_name is internally generated (uuid hex), not user input — safe for DDL.
         with self._db() as db:
-            db.execute(text(
-                f"data branch create table {branch_name} from mem_memories"
-            ))
+            db.execute(
+                text(f"data branch create table {branch_name} from mem_memories")
+            )
             db.commit()
 
     def _insert_to_branch(self, branch_name: str, memories: list[Memory]) -> None:
@@ -120,44 +127,54 @@ class MemorySandbox(DbConsumer):
                 else:
                     vec_literal = None
 
-                source_ids = str(m.source_event_ids).replace("'", '"') if m.source_event_ids else "[]"
+                source_ids = (
+                    str(m.source_event_ids).replace("'", '"')
+                    if m.source_event_ids
+                    else "[]"
+                )
                 now = m.observed_at or _utcnow()
 
                 if vec_literal:
-                    db.execute(text(f"""
+                    db.execute(
+                        text(f"""
                         INSERT INTO {branch_name}
                         (memory_id, user_id, memory_type, content, initial_confidence,
                          embedding, source_event_ids, is_active, observed_at, created_at)
                         VALUES (:mid, :uid, :mtype, :content, :conf,
                                 :vec, :sources, 1, :obs_at, :created_at)
-                    """), {
-                        "mid": m.memory_id,
-                        "uid": m.user_id,
-                        "mtype": m.memory_type.value,
-                        "content": m.content,
-                        "conf": m.initial_confidence,
-                        "vec": vec_literal,
-                        "sources": source_ids,
-                        "obs_at": now,
-                        "created_at": now,
-                    })
+                    """),
+                        {
+                            "mid": m.memory_id,
+                            "uid": m.user_id,
+                            "mtype": m.memory_type.value,
+                            "content": m.content,
+                            "conf": m.initial_confidence,
+                            "vec": vec_literal,
+                            "sources": source_ids,
+                            "obs_at": now,
+                            "created_at": now,
+                        },
+                    )
                 else:
-                    db.execute(text(f"""
+                    db.execute(
+                        text(f"""
                         INSERT INTO {branch_name}
                         (memory_id, user_id, memory_type, content, initial_confidence,
                          source_event_ids, is_active, observed_at, created_at)
                         VALUES (:mid, :uid, :mtype, :content, :conf,
                                 :sources, 1, :obs_at, :created_at)
-                    """), {
-                        "mid": m.memory_id,
-                        "uid": m.user_id,
-                        "mtype": m.memory_type.value,
-                        "content": m.content,
-                        "conf": m.initial_confidence,
-                        "sources": source_ids,
-                        "obs_at": now,
-                        "created_at": now,
-                    })
+                    """),
+                        {
+                            "mid": m.memory_id,
+                            "uid": m.user_id,
+                            "mtype": m.memory_type.value,
+                            "content": m.content,
+                            "conf": m.initial_confidence,
+                            "sources": source_ids,
+                            "obs_at": now,
+                            "created_at": now,
+                        },
+                    )
             db.commit()
 
     def _retrieval_score(
@@ -175,19 +192,25 @@ class MemorySandbox(DbConsumer):
             if query_embedding:
                 # Vector literal from embed_fn (numeric array), passed as parameter.
                 vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
-                rows = db.execute(text(f"""
+                rows = db.execute(
+                    text(f"""
                     SELECT (1.0 / (1.0 + L2_DISTANCE(embedding, :vec))) AS sim
                     FROM {table_name}
                     WHERE user_id = :uid AND is_active = 1
                     ORDER BY sim DESC LIMIT 5
-                """), {"uid": user_id, "vec": vec_str}).fetchall()
+                """),
+                    {"uid": user_id, "vec": vec_str},
+                ).fetchall()
             else:
-                rows = db.execute(text(f"""
+                rows = db.execute(
+                    text(f"""
                     SELECT confidence AS sim
                     FROM {table_name}
                     WHERE user_id = :uid AND is_active = 1
                     ORDER BY confidence DESC LIMIT 5
-                """), {"uid": user_id}).fetchall()
+                """),
+                    {"uid": user_id},
+                ).fetchall()
 
             if not rows:
                 return 0.0
@@ -196,9 +219,9 @@ class MemorySandbox(DbConsumer):
     def _drop_branch(self, branch_name: str) -> None:
         try:
             with self._db() as db:
-                db.execute(text(
-                    f"data branch delete table {self.db_name}.{branch_name}"
-                ))
+                db.execute(
+                    text(f"data branch delete table {self.db_name}.{branch_name}")
+                )
                 db.commit()
         except Exception as e:
             logger.warning("Failed to drop branch %s: %s", branch_name, e)

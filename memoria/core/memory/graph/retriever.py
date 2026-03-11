@@ -38,17 +38,18 @@ ANCHOR_TOP_K = 10
 # §13.2 Memory mode → activation parameters per task type
 _TASK_ACTIVATION_PARAMS: dict[str | None, tuple[int, int]] = {
     # task_type: (iterations, anchor_k)
-    "code_review": (3, 10),   # FULL
-    "debugging":   (3, 10),   # FULL
-    "planning":    (2, 5),    # COMPRESSED
-    "general":     (3, 10),   # FULL (fallback)
-    None:          (3, 10),   # default
+    "code_review": (3, 10),  # FULL
+    "debugging": (3, 10),  # FULL
+    "planning": (2, 5),  # COMPRESSED
+    "general": (3, 10),  # FULL (fallback)
+    None: (3, 10),  # default
 }
 
 
 def _task_activation_params(task_type: str | None) -> tuple[int, int]:
     """Return (iterations, anchor_k) for the given task type."""
     return _TASK_ACTIVATION_PARAMS.get(task_type, _TASK_ACTIVATION_PARAMS[None])
+
 
 _HALF_LIVES = {"T1": 365.0, "T2": 180.0, "T3": 60.0, "T4": 30.0}
 
@@ -67,7 +68,9 @@ def _effective_confidence(node: GraphNodeData) -> float:
             created = node.created_at
         if created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
-        age_days = max((datetime.now(timezone.utc) - created).total_seconds() / 86400.0, 0.0)
+        age_days = max(
+            (datetime.now(timezone.utc) - created).total_seconds() / 86400.0, 0.0
+        )
         return node.confidence * math.exp(-age_days * math.log(2) / half_life)
     except (ValueError, TypeError):
         return node.confidence
@@ -83,9 +86,12 @@ class ActivationRetriever:
         self._store = store
 
     def retrieve(
-        self, user_id: str, query: str,
+        self,
+        user_id: str,
+        query: str,
         query_embedding: list[float] | None = None,
-        *, top_k: int = 10,
+        *,
+        top_k: int = 10,
         task_type: str | None = None,
     ) -> list[tuple[GraphNodeData, float]]:
         if not query_embedding:
@@ -98,7 +104,9 @@ class ActivationRetriever:
 
         # 1. DB-side anchor selection (cosine similarity)
         anchor_results = self._store.find_similar_with_scores(
-            user_id, query_embedding, top_k=anchor_k,
+            user_id,
+            query_embedding,
+            top_k=anchor_k,
         )
         if not anchor_results:
             return []
@@ -114,7 +122,9 @@ class ActivationRetriever:
 
         # 3. Collect candidate IDs
         candidate_ids: set[str] = set(anchors.keys())
-        for nid, _ in sorted(activation_map.items(), key=lambda x: x[1], reverse=True)[:top_k * 3]:
+        for nid, _ in sorted(activation_map.items(), key=lambda x: x[1], reverse=True)[
+            : top_k * 3
+        ]:
             candidate_ids.add(nid)
 
         # 4. Fetch only the candidate nodes (not full graph)

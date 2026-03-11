@@ -37,6 +37,7 @@ def isolated_test_db(request):
     # Reset module-level singletons so they pick up the new DB name
     import memoria.api.database as _db_mod
     import memoria.config as _cfg_mod
+
     _db_mod._engine = None
     _db_mod._SessionLocal = None
     _cfg_mod._settings = None
@@ -48,11 +49,15 @@ def isolated_test_db(request):
         from sqlalchemy import text
         from matrixone import Client as MoClient
         from memoria.config import get_settings
+
         s = get_settings()
         bootstrap = MoClient(
-            host=s.db_host, port=s.db_port,
-            user=s.db_user, password=s.db_password,
-            database="mo_catalog", sql_log_mode="off",
+            host=s.db_host,
+            port=s.db_port,
+            user=s.db_user,
+            password=s.db_password,
+            database="mo_catalog",
+            sql_log_mode="off",
         )
         with bootstrap._engine.connect() as c:
             c.execute(text(f"DROP DATABASE IF EXISTS `{db_name}`"))

@@ -60,3 +60,25 @@ markers = [
     "benchmark: marks performance benchmark tests",
     "local_embedding: marks tests requiring local sentence-transformers",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "memoria.core.memory.tabular.*",
+    "memoria.core.memory.graph.*",
+    "memoria.core.memory.models.*",
+    "memoria.mcp_local.server",
+    "memoria.core.llm",
+    "memoria.api.routers.snapshots",
+    "memoria.api.routers.auth",
+    "memoria.core.memory.editor",
+    "memoria.core.memory.service",
+]
+ignore_errors = true

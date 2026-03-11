@@ -21,6 +21,7 @@ _MCP_KEY = "memoria"
 
 # ── Templates ─────────────────────────────────────────────────────────
 
+
 def _templates_dir() -> Path:
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
     return base / "templates"
@@ -47,8 +48,12 @@ def _claude_rule() -> str:
 
 # ── MCP config ────────────────────────────────────────────────────────
 
-def _mcp_entry(db_url: str | None, api_url: str | None, token: str | None, user: str, **embed: str) -> dict[str, Any]:
+
+def _mcp_entry(
+    db_url: str | None, api_url: str | None, token: str | None, user: str, **embed: str
+) -> dict[str, Any]:
     import shutil
+
     # Use absolute path so Kiro/Cursor can find the command regardless of PATH
     cmd = shutil.which("memoria-mcp") or "memoria-mcp"
     if api_url:
@@ -76,6 +81,7 @@ def _mcp_entry(db_url: str | None, api_url: str | None, token: str | None, user:
 
 # ── Detection ─────────────────────────────────────────────────────────
 
+
 def _detect(project_dir: Path) -> list[str]:
     found = []
     if (project_dir / ".kiro").is_dir():
@@ -88,6 +94,7 @@ def _detect(project_dir: Path) -> list[str]:
 
 
 # ── Write helpers ─────────────────────────────────────────────────────
+
 
 def _installed_version(path: Path) -> str | None:
     if not path.exists():
@@ -123,14 +130,27 @@ def _write_mcp_json(path: Path, entry: dict, project_dir: Path) -> str:
 
 
 def _configure_kiro(project_dir: Path, entry: dict, force: bool) -> list[str]:
-    actions = [_write_mcp_json(project_dir / ".kiro/settings/mcp.json", entry, project_dir)]
-    actions.append(_write_rule(project_dir / ".kiro/steering/memory.md", _kiro_steering(), force, project_dir))
+    actions = [
+        _write_mcp_json(project_dir / ".kiro/settings/mcp.json", entry, project_dir)
+    ]
+    actions.append(
+        _write_rule(
+            project_dir / ".kiro/steering/memory.md",
+            _kiro_steering(),
+            force,
+            project_dir,
+        )
+    )
     return actions
 
 
 def _configure_cursor(project_dir: Path, entry: dict, force: bool) -> list[str]:
     actions = [_write_mcp_json(project_dir / ".cursor/mcp.json", entry, project_dir)]
-    actions.append(_write_rule(project_dir / ".cursor/rules/memory.mdc", _cursor_rule(), force, project_dir))
+    actions.append(
+        _write_rule(
+            project_dir / ".cursor/rules/memory.mdc", _cursor_rule(), force, project_dir
+        )
+    )
     return actions
 
 
@@ -153,6 +173,7 @@ def _configure_claude(project_dir: Path, entry: dict, force: bool) -> list[str]:
 
 # ── Commands ──────────────────────────────────────────────────────────
 
+
 def cmd_init(args: argparse.Namespace) -> None:
     project_dir = Path(args.dir).resolve()
     tools = args.tool or _detect(project_dir)
@@ -174,7 +195,11 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     entry = _mcp_entry(args.db_url, args.api_url, args.token, args.user, **embed_env)
 
-    writers = {"kiro": _configure_kiro, "cursor": _configure_cursor, "claude": _configure_claude}
+    writers = {
+        "kiro": _configure_kiro,
+        "cursor": _configure_cursor,
+        "claude": _configure_claude,
+    }
     for tool in tools:
         print(f"{tool}:")
         for line in writers[tool](project_dir, entry, args.force):
@@ -202,7 +227,11 @@ def cmd_status(args: argparse.Namespace) -> None:
         has_mcp = _MCP_KEY in cfg.get("mcpServers", {})
         ver = _installed_version(rule_paths[tool])
         mcp_status = "✅" if has_mcp else "❌ not configured"
-        rule_status = f"✅ v{ver}" if ver == _VERSION else (f"⚠️  outdated ({ver})" if ver else "❌ missing")
+        rule_status = (
+            f"✅ v{ver}"
+            if ver == _VERSION
+            else (f"⚠️  outdated ({ver})" if ver else "❌ missing")
+        )
         print(f"  {tool}: mcp={mcp_status}  rules={rule_status}")
 
 
@@ -224,17 +253,29 @@ def cmd_update_rules(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="memoria", description=f"Memoria v{_VERSION} — configure AI tools for persistent memory")
-    parser.add_argument("--dir", default=".", help="Project directory (default: current)")
+    parser = argparse.ArgumentParser(
+        prog="memoria",
+        description=f"Memoria v{_VERSION} — configure AI tools for persistent memory",
+    )
+    parser.add_argument(
+        "--dir", default=".", help="Project directory (default: current)"
+    )
     sub = parser.add_subparsers(dest="command")
 
     p = sub.add_parser("init", help="Write MCP config + steering rules")
-    p.add_argument("--tool", choices=["kiro", "cursor", "claude"], action="append", help="Target tool (repeatable; default: auto-detect)")
+    p.add_argument(
+        "--tool",
+        choices=["kiro", "cursor", "claude"],
+        action="append",
+        help="Target tool (repeatable; default: auto-detect)",
+    )
     p.add_argument("--db-url", help="Database URL for embedded mode")
     p.add_argument("--api-url", help="Memoria REST API URL for remote mode")
     p.add_argument("--token", help="API token for remote mode")
     p.add_argument("--user", default="default", help="Default user ID")
-    p.add_argument("--force", action="store_true", help="Overwrite customized rule files")
+    p.add_argument(
+        "--force", action="store_true", help="Overwrite customized rule files"
+    )
     p.add_argument("--embedding-provider", help="Embedding provider (openai, local)")
     p.add_argument("--embedding-model", help="Embedding model name")
     p.add_argument("--embedding-dim", help="Embedding dimension")
@@ -245,7 +286,11 @@ def main() -> None:
     sub.add_parser("update-rules", help="Update steering rules to latest version")
 
     args = parser.parse_args()
-    dispatch = {"init": cmd_init, "status": cmd_status, "update-rules": cmd_update_rules}
+    dispatch = {
+        "init": cmd_init,
+        "status": cmd_status,
+        "update-rules": cmd_update_rules,
+    }
     fn = dispatch.get(args.command)
     if fn:
         fn(args)

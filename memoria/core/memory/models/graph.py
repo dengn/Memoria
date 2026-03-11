@@ -1,6 +1,7 @@
 """Graph SQLAlchemy models — nodes and edges for memory graph."""
 
 from matrixone import VectorPrecision, VectorType
+
 if not getattr(VectorType, "cache_ok", False):
     VectorType.cache_ok = True
 from matrixone.sqlalchemy_ext import FulltextIndex, FulltextParserType
@@ -35,7 +36,9 @@ class GraphNode(Base):
     node_type = Column(String(10), nullable=False)
 
     content = Column(Text, nullable=False)
-    entity_type = Column(String(20))  # entity nodes only: tech, person, repo, project, concept
+    entity_type = Column(
+        String(20)
+    )  # entity nodes only: tech, person, repo, project, concept
     embedding = Column(VectorType(EMBEDDING_DIM, VectorPrecision.F32))
 
     event_id = Column(String(32))

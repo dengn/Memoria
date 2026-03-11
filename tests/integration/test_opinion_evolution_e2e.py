@@ -15,6 +15,7 @@ from memoria.core.memory.models.memory import MemoryRecord
 from memoria.core.memory.tabular.store import MemoryStore
 from memoria.core.memory.tabular.typed_observer import TypedObserver
 from memoria.core.memory.types import Memory, MemoryType, TrustTier
+from tests.conftest import TEST_EMBEDDING_DIM
 
 
 def _now():
@@ -29,9 +30,6 @@ def _mid():
     return uuid.uuid4().hex
 
 
-from tests.conftest import TEST_EMBEDDING_DIM
-
-
 def _embed_ortho():
     """Embedding orthogonal to _embed() — cosine similarity = 0.0."""
     return [1.0 if i % 2 == 0 else -1.0 for i in range(TEST_EMBEDDING_DIM)]
@@ -44,19 +42,28 @@ def _embed(val: float = 0.5):
 def _embed_neutral():
     """Embedding with ~0.47 cosine similarity to _embed() — in neutral zone (0.3~0.8)."""
     half = TEST_EMBEDDING_DIM // 2
-    return [0.9 if i < half else (1.0 if i % 2 == 0 else -1.0) for i in range(TEST_EMBEDDING_DIM)]
+    return [
+        0.9 if i < half else (1.0 if i % 2 == 0 else -1.0)
+        for i in range(TEST_EMBEDDING_DIM)
+    ]
 
 
-def _insert_scene(db, user_id, content, *, embedding, confidence=0.5,
-                  trust_tier="T4"):
+def _insert_scene(db, user_id, content, *, embedding, confidence=0.5, trust_tier="T4"):
     """Insert a scene memory (session_id=None, like reflection output)."""
     mid = _mid()
     row = MemoryRecord(
-        memory_id=mid, user_id=user_id, session_id=None,
-        memory_type="procedural", content=content,
-        initial_confidence=confidence, trust_tier=trust_tier,
-        embedding=embedding, source_event_ids=[],
-        superseded_by=None, is_active=1, observed_at=_now(),
+        memory_id=mid,
+        user_id=user_id,
+        session_id=None,
+        memory_type="procedural",
+        content=content,
+        initial_confidence=confidence,
+        trust_tier=trust_tier,
+        embedding=embedding,
+        source_event_ids=[],
+        superseded_by=None,
+        is_active=1,
+        observed_at=_now(),
     )
     db.add(row)
     db.commit()
@@ -66,14 +73,15 @@ def _insert_scene(db, user_id, content, *, embedding, confidence=0.5,
 
 def _get(db, memory_id):
     db.expire_all()
-    return db.query(MemoryRecord).filter(
-        MemoryRecord.memory_id == memory_id).first()
+    return db.query(MemoryRecord).filter(MemoryRecord.memory_id == memory_id).first()
 
 
 def _make_observer(db_factory):
     store = MemoryStore(db_factory)
     return TypedObserver(
-        store=store, llm_client=None, embed_fn=None,
+        store=store,
+        llm_client=None,
+        embed_fn=None,
         db_factory=db_factory,
     )
 
@@ -85,15 +93,20 @@ class TestOpinionSupportingEvidence:
         uid = _uid()
         emb = _embed(0.9)
         # Scene: reflection-produced, T4, conf=0.5
-        scene = _insert_scene(db, uid, "User prefers dark mode",
-                              embedding=emb, confidence=0.5)
+        scene = _insert_scene(
+            db, uid, "User prefers dark mode", embedding=emb, confidence=0.5
+        )
 
         # Store a very similar new memory (same embedding = cosine sim ~1.0)
         observer = _make_observer(db_factory)
         new_mem = Memory(
-            memory_id=_mid(), user_id=uid, memory_type=MemoryType.PROCEDURAL,
-            content="User likes dark mode", embedding=emb,
-            session_id="s1", initial_confidence=0.65,
+            memory_id=_mid(),
+            user_id=uid,
+            memory_type=MemoryType.PROCEDURAL,
+            content="User likes dark mode",
+            embedding=emb,
+            session_id="s1",
+            initial_confidence=0.65,
             trust_tier=TrustTier.T3_INFERRED,
         )
         observer.store.create(new_mem)
@@ -106,10 +119,10 @@ class TestOpinionSupportingEvidence:
         # All other fields unchanged
         assert s.memory_id == scene.memory_id
         assert s.user_id == uid
-        assert s.session_id is None          # still a scene
+        assert s.session_id is None  # still a scene
         assert s.memory_type == "procedural"
         assert s.content == "User prefers dark mode"
-        assert s.trust_tier == "T4"          # not promoted yet (0.55 < 0.8)
+        assert s.trust_tier == "T4"  # not promoted yet (0.55 < 0.8)
         assert s.is_active == 1
         assert s.embedding is not None
         assert s.source_event_ids == []
@@ -125,14 +138,19 @@ class TestOpinionContradictingEvidence:
         # Orthogonal embedding → low cosine similarity
         contra_emb = _embed_ortho()
 
-        scene = _insert_scene(db, uid, "User prefers tabs",
-                              embedding=scene_emb, confidence=0.5)
+        scene = _insert_scene(
+            db, uid, "User prefers tabs", embedding=scene_emb, confidence=0.5
+        )
 
         observer = _make_observer(db_factory)
         new_mem = Memory(
-            memory_id=_mid(), user_id=uid, memory_type=MemoryType.PROCEDURAL,
-            content="User prefers spaces", embedding=contra_emb,
-            session_id="s1", initial_confidence=0.65,
+            memory_id=_mid(),
+            user_id=uid,
+            memory_type=MemoryType.PROCEDURAL,
+            content="User prefers spaces",
+            embedding=contra_emb,
+            session_id="s1",
+            initial_confidence=0.65,
             trust_tier=TrustTier.T3_INFERRED,
         )
         observer.store.create(new_mem)
@@ -153,24 +171,28 @@ class TestOpinionNeutralEvidence:
         scene_emb = _embed(0.9)
         neutral_emb = _embed_neutral()
 
-        scene = _insert_scene(db, uid, "User prefers vim",
-                              embedding=scene_emb, confidence=0.5)
-        original_updated_at = scene.updated_at
+        scene = _insert_scene(
+            db, uid, "User prefers vim", embedding=scene_emb, confidence=0.5
+        )
 
         observer = _make_observer(db_factory)
         new_mem = Memory(
-            memory_id=_mid(), user_id=uid, memory_type=MemoryType.PROCEDURAL,
-            content="User uses vim sometimes", embedding=neutral_emb,
-            session_id="s1", initial_confidence=0.65,
+            memory_id=_mid(),
+            user_id=uid,
+            memory_type=MemoryType.PROCEDURAL,
+            content="User uses vim sometimes",
+            embedding=neutral_emb,
+            session_id="s1",
+            initial_confidence=0.65,
             trust_tier=TrustTier.T3_INFERRED,
         )
         observer.store.create(new_mem)
         observer._evolve_scene_opinions(new_mem)
 
         s = _get(db, scene.memory_id)
-        assert s.initial_confidence == 0.5   # unchanged
-        assert s.trust_tier == "T4"          # unchanged
-        assert s.is_active == 1              # unchanged
+        assert s.initial_confidence == 0.5  # unchanged
+        assert s.trust_tier == "T4"  # unchanged
+        assert s.is_active == 1  # unchanged
         assert s.content == "User prefers vim"
 
 
@@ -181,14 +203,19 @@ class TestOpinionPromotion:
         uid = _uid()
         emb = _embed(0.9)
         # Start at 0.78 — one more supporting push crosses 0.8
-        scene = _insert_scene(db, uid, "Always run linter",
-                              embedding=emb, confidence=0.78)
+        scene = _insert_scene(
+            db, uid, "Always run linter", embedding=emb, confidence=0.78
+        )
 
         observer = _make_observer(db_factory)
         new_mem = Memory(
-            memory_id=_mid(), user_id=uid, memory_type=MemoryType.PROCEDURAL,
-            content="Run linter before commit", embedding=emb,
-            session_id="s1", initial_confidence=0.65,
+            memory_id=_mid(),
+            user_id=uid,
+            memory_type=MemoryType.PROCEDURAL,
+            content="Run linter before commit",
+            embedding=emb,
+            session_id="s1",
+            initial_confidence=0.65,
             trust_tier=TrustTier.T3_INFERRED,
         )
         observer.store.create(new_mem)
@@ -196,7 +223,7 @@ class TestOpinionPromotion:
 
         s = _get(db, scene.memory_id)
         assert s.initial_confidence == pytest.approx(0.83, abs=0.01)  # 0.78 + 0.05
-        assert s.trust_tier == "T3"          # PROMOTED
+        assert s.trust_tier == "T3"  # PROMOTED
         assert s.is_active == 1
         assert s.content == "Always run linter"
         assert s.session_id is None
@@ -212,14 +239,19 @@ class TestOpinionQuarantine:
         contra_emb = _embed_ortho()
 
         # Start at 0.25 — one contradicting push drops to 0.15 < 0.2
-        scene = _insert_scene(db, uid, "Outdated belief",
-                              embedding=scene_emb, confidence=0.25)
+        scene = _insert_scene(
+            db, uid, "Outdated belief", embedding=scene_emb, confidence=0.25
+        )
 
         observer = _make_observer(db_factory)
         new_mem = Memory(
-            memory_id=_mid(), user_id=uid, memory_type=MemoryType.PROCEDURAL,
-            content="Contradicting info", embedding=contra_emb,
-            session_id="s1", initial_confidence=0.65,
+            memory_id=_mid(),
+            user_id=uid,
+            memory_type=MemoryType.PROCEDURAL,
+            content="Contradicting info",
+            embedding=contra_emb,
+            session_id="s1",
+            initial_confidence=0.65,
             trust_tier=TrustTier.T3_INFERRED,
         )
         observer.store.create(new_mem)
@@ -227,8 +259,8 @@ class TestOpinionQuarantine:
 
         s = _get(db, scene.memory_id)
         assert s.initial_confidence == pytest.approx(0.15, abs=0.01)  # 0.25 - 0.10
-        assert s.is_active == 0              # QUARANTINED
-        assert s.trust_tier == "T4"          # not promoted
+        assert s.is_active == 0  # QUARANTINED
+        assert s.trust_tier == "T4"  # not promoted
         assert s.content == "Outdated belief"
         assert s.session_id is None
 
@@ -238,14 +270,19 @@ class TestOpinionNoEmbedding:
 
     def test_no_embedding_no_change(self, db, db_factory):
         uid = _uid()
-        scene = _insert_scene(db, uid, "Some scene",
-                              embedding=_embed(0.9), confidence=0.5)
+        scene = _insert_scene(
+            db, uid, "Some scene", embedding=_embed(0.9), confidence=0.5
+        )
 
         observer = _make_observer(db_factory)
         new_mem = Memory(
-            memory_id=_mid(), user_id=uid, memory_type=MemoryType.PROCEDURAL,
-            content="No embedding", embedding=None,
-            session_id="s1", initial_confidence=0.65,
+            memory_id=_mid(),
+            user_id=uid,
+            memory_type=MemoryType.PROCEDURAL,
+            content="No embedding",
+            embedding=None,
+            session_id="s1",
+            initial_confidence=0.65,
             trust_tier=TrustTier.T3_INFERRED,
         )
         observer.store.create(new_mem)
@@ -263,21 +300,24 @@ class TestOpinionUserIsolation:
         uid_a, uid_b = _uid(), _uid()
         emb = _embed(0.9)
 
-        scene_b = _insert_scene(db, uid_b, "B's scene",
-                                embedding=emb, confidence=0.5)
+        scene_b = _insert_scene(db, uid_b, "B's scene", embedding=emb, confidence=0.5)
 
         observer = _make_observer(db_factory)
         new_mem = Memory(
-            memory_id=_mid(), user_id=uid_a, memory_type=MemoryType.PROCEDURAL,
-            content="A's memory", embedding=emb,
-            session_id="s1", initial_confidence=0.65,
+            memory_id=_mid(),
+            user_id=uid_a,
+            memory_type=MemoryType.PROCEDURAL,
+            content="A's memory",
+            embedding=emb,
+            session_id="s1",
+            initial_confidence=0.65,
             trust_tier=TrustTier.T3_INFERRED,
         )
         observer.store.create(new_mem)
         observer._evolve_scene_opinions(new_mem)
 
         s = _get(db, scene_b.memory_id)
-        assert s.initial_confidence == 0.5   # untouched
+        assert s.initial_confidence == 0.5  # untouched
         assert s.is_active == 1
         assert s.trust_tier == "T4"
         assert s.user_id == uid_b
@@ -291,16 +331,22 @@ class TestOpinionMultipleScenes:
         similar_emb = _embed(0.9)
         different_emb = _embed_ortho()
 
-        scene_similar = _insert_scene(db, uid, "Similar scene",
-                                      embedding=similar_emb, confidence=0.5)
-        scene_different = _insert_scene(db, uid, "Different scene",
-                                        embedding=different_emb, confidence=0.5)
+        scene_similar = _insert_scene(
+            db, uid, "Similar scene", embedding=similar_emb, confidence=0.5
+        )
+        scene_different = _insert_scene(
+            db, uid, "Different scene", embedding=different_emb, confidence=0.5
+        )
 
         observer = _make_observer(db_factory)
         new_mem = Memory(
-            memory_id=_mid(), user_id=uid, memory_type=MemoryType.PROCEDURAL,
-            content="New evidence", embedding=similar_emb,
-            session_id="s1", initial_confidence=0.65,
+            memory_id=_mid(),
+            user_id=uid,
+            memory_type=MemoryType.PROCEDURAL,
+            content="New evidence",
+            embedding=similar_emb,
+            session_id="s1",
+            initial_confidence=0.65,
             trust_tier=TrustTier.T3_INFERRED,
         )
         observer.store.create(new_mem)

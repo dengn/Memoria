@@ -31,7 +31,9 @@ class TestL0ProfileInPrompt:
         mock_svc.retrieve.return_value = []
 
         loader = TieredMemoryLoader(mock_svc)
-        section, _ = loader.build_section(uid(), session_id="test_session", query="test")
+        section, _ = loader.build_section(
+            uid(), session_id="test_session", query="test"
+        )
 
         # No memories → empty section (don't waste tokens on filler)
         assert section is not None
@@ -73,13 +75,18 @@ class TestContradictionDetection:
 
         store = MagicMock()
         observer = TypedObserver(
-            store=store, llm_client=None, embed_fn=None,
+            store=store,
+            llm_client=None,
+            embed_fn=None,
             db_factory=lambda: mock_db,
         )
 
         new_mem = Memory(
-            memory_id="new1", user_id="u", memory_type=MemoryType.PROFILE,
-            content="User prefers spaces", initial_confidence=0.9,
+            memory_id="new1",
+            user_id="u",
+            memory_type=MemoryType.PROFILE,
+            content="User prefers spaces",
+            initial_confidence=0.9,
             embedding=[0.1] * 768,
             observed_at=datetime.now(timezone.utc),
         )
@@ -100,13 +107,18 @@ class TestContradictionDetection:
 
         store = MagicMock()
         observer = TypedObserver(
-            store=store, llm_client=None, embed_fn=None,
+            store=store,
+            llm_client=None,
+            embed_fn=None,
             db_factory=lambda: mock_db,
         )
 
         rust_mem = Memory(
-            memory_id="rust1", user_id="u", memory_type=MemoryType.PROFILE,
-            content="User likes Rust", initial_confidence=0.8,
+            memory_id="rust1",
+            user_id="u",
+            memory_type=MemoryType.PROFILE,
+            content="User likes Rust",
+            initial_confidence=0.8,
             embedding=[0.0] * 767 + [1.0],
             observed_at=datetime.now(timezone.utc),
         )
@@ -117,11 +129,16 @@ class TestContradictionDetection:
     def test_no_db_factory_skips_contradiction_detection(self):
         """Without db_factory, contradiction detection is skipped (returns None)."""
         store = MagicMock()
-        observer = TypedObserver(store=store, llm_client=None, embed_fn=None, db_factory=None)
+        observer = TypedObserver(
+            store=store, llm_client=None, embed_fn=None, db_factory=None
+        )
 
         new_mem = Memory(
-            memory_id="new1", user_id="u", memory_type=MemoryType.PROFILE,
-            content="User prefers spaces", initial_confidence=0.9,
+            memory_id="new1",
+            user_id="u",
+            memory_type=MemoryType.PROFILE,
+            content="User prefers spaces",
+            initial_confidence=0.9,
             embedding=[0.1] * 768,
             observed_at=datetime.now(timezone.utc),
         )
@@ -136,13 +153,15 @@ class TestHealthDetection:
     def test_health_class_exists(self):
         """MemoryHealth class is properly defined."""
         mock_db = MagicMock()
-        db_factory = lambda: mock_db
+
+        def db_factory():
+            return mock_db
 
         health = MemoryHealth(db_factory)
         # Verify methods exist
-        assert hasattr(health, 'analyze')
-        assert hasattr(health, 'detect_pollution')
-        assert hasattr(health, 'suggest_rollback_target')
+        assert hasattr(health, "analyze")
+        assert hasattr(health, "detect_pollution")
+        assert hasattr(health, "suggest_rollback_target")
 
 
 class TestGovernanceConfig:
@@ -207,11 +226,11 @@ class TestObserverExtraction:
         """_parse_json_array extracts JSON from markdown code blocks."""
         from memoria.core.memory.tabular.typed_observer import _parse_json_array
 
-        text = '''Here are the memories:
+        text = """Here are the memories:
 ```json
 [{"content": "User likes Python", "type": "profile", "confidence": 0.8}]
 ```
-'''
+"""
         result = _parse_json_array(text)
         assert len(result) == 1
         assert result[0]["content"] == "User likes Python"

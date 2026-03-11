@@ -14,7 +14,13 @@ from typing import TYPE_CHECKING, Any
 
 from memoria.core.memory.interfaces import GovernanceReport, HealthReport
 from memoria.core.memory.tabular.metrics import MemoryMetrics
-from memoria.core.memory.types import Memory, MemoryType, RetrievalWeights, TrustTier, _utcnow
+from memoria.core.memory.types import (
+    Memory,
+    MemoryType,
+    RetrievalWeights,
+    TrustTier,
+    _utcnow,
+)
 
 if TYPE_CHECKING:
     from memoria.core.db_consumer import DbFactory
@@ -55,6 +61,7 @@ class TabularMemoryService:
         # Deferred config import
         if config is None:
             from memoria.core.memory.config import DEFAULT_CONFIG
+
             self._config = DEFAULT_CONFIG
         else:
             self._config = config
@@ -66,6 +73,7 @@ class TabularMemoryService:
     def _store_lazy(self) -> Any:
         if self._store is None:
             from memoria.core.memory.tabular.store import MemoryStore
+
             self._store = MemoryStore(self._db_factory, metrics=self._metrics)
         return self._store
 
@@ -73,13 +81,17 @@ class TabularMemoryService:
     def _retriever_lazy(self) -> Any:
         if self._retriever is None:
             from memoria.core.memory.tabular.retriever import MemoryRetriever
-            self._retriever = MemoryRetriever(self._db_factory, metrics=self._metrics, config=self._config)
+
+            self._retriever = MemoryRetriever(
+                self._db_factory, metrics=self._metrics, config=self._config
+            )
         return self._retriever
 
     @property
     def _profile_mgr_lazy(self) -> Any:
         if self._profile_mgr is None:
             from memoria.core.memory.tabular.profile import ProfileManager
+
             self._profile_mgr = ProfileManager(self._store_lazy)
         return self._profile_mgr
 
@@ -87,6 +99,7 @@ class TabularMemoryService:
     def _observer_lazy(self) -> Any:
         if self._observer is None:
             from memoria.core.memory.tabular.typed_observer import TypedObserver
+
             self._observer = TypedObserver(
                 store=self._store_lazy,
                 llm_client=self._llm_client,
@@ -100,9 +113,13 @@ class TabularMemoryService:
     def _governance_lazy(self) -> Any:
         if self._governance is None:
             from memoria.core.memory.tabular.governance import GovernanceScheduler
+
             self._governance = GovernanceScheduler(
-                self._db_factory, config=self._config, metrics=self._metrics,
-                llm_client=self._llm_client, embed_fn=self._embed_fn,
+                self._db_factory,
+                config=self._config,
+                metrics=self._metrics,
+                llm_client=self._llm_client,
+                embed_fn=self._embed_fn,
             )
         return self._governance
 
@@ -110,6 +127,7 @@ class TabularMemoryService:
     def _health_lazy(self) -> Any:
         if self._health is None:
             from memoria.core.memory.tabular.health import MemoryHealth
+
             self._health = MemoryHealth(
                 self._db_factory,
                 pollution_threshold=self._config.pollution_threshold,
@@ -120,6 +138,7 @@ class TabularMemoryService:
     def _summarizer_lazy(self) -> Any:
         if self._summarizer is None:
             from memoria.core.memory.tabular.session_summary import SessionSummarizer
+
             self._summarizer = SessionSummarizer(
                 store=self._store_lazy,
                 llm_client=self._llm_client,
@@ -238,7 +257,9 @@ class TabularMemoryService:
         messages: list[dict[str, Any]],
     ) -> Memory | None:
         """Generate full session summary on close."""
-        return self._summarizer_lazy.generate_full_summary(user_id, session_id, messages)
+        return self._summarizer_lazy.generate_full_summary(
+            user_id, session_id, messages
+        )
 
     def check_and_summarize(
         self,
@@ -250,7 +271,11 @@ class TabularMemoryService:
     ) -> Memory | None:
         """Check thresholds and generate incremental summary if needed."""
         return self._summarizer_lazy.check_and_summarize(
-            user_id, session_id, messages, turn_count, session_start,
+            user_id,
+            session_id,
+            messages,
+            turn_count,
+            session_start,
         )
 
     # ── MemoryAdmin ───────────────────────────────────────────────────
@@ -276,7 +301,8 @@ class TabularMemoryService:
         storage = self._health_lazy.get_storage_stats(user_id)
         per_type = self._health_lazy.analyze(user_id)
         pollution = self._health_lazy.detect_pollution(
-            user_id, _utcnow() - timedelta(days=1),
+            user_id,
+            _utcnow() - timedelta(days=1),
         )
         return HealthReport(
             total=storage.get("total", 0),
@@ -314,7 +340,9 @@ class TabularMemoryService:
     ) -> list[Memory]:
         """List active memories, optionally filtered by type."""
         return self._store_lazy.list_active(
-            user_id, memory_type=memory_type, limit=limit,
+            user_id,
+            memory_type=memory_type,
+            limit=limit,
             load_embedding=load_embedding,
         )
 

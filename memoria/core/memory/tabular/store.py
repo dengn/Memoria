@@ -28,7 +28,9 @@ def _to_domain(row: MemoryRecord) -> Memory:
         observed_at=row.observed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
-        trust_tier=TrustTier(row.trust_tier) if row.trust_tier else TrustTier.T3_INFERRED,
+        trust_tier=TrustTier(row.trust_tier)
+        if row.trust_tier
+        else TrustTier.T3_INFERRED,
     )
 
 
@@ -48,7 +50,9 @@ def _to_domain_light(row) -> Memory:
         observed_at=row.observed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
-        trust_tier=TrustTier(row.trust_tier) if row.trust_tier else TrustTier.T3_INFERRED,
+        trust_tier=TrustTier(row.trust_tier)
+        if row.trust_tier
+        else TrustTier.T3_INFERRED,
     )
 
 
@@ -129,19 +133,28 @@ class MemoryStore(DbConsumer):
     def update_content(self, memory_id: str, content: str) -> None:
         """Update content of an existing memory (e.g. streaming accumulation)."""
         with self._db() as db:
-            db.query(MemoryRecord).filter_by(memory_id=memory_id).update({"content": content})
+            db.query(MemoryRecord).filter_by(memory_id=memory_id).update(
+                {"content": content}
+            )
             db.commit()
 
     def update_embedding(self, memory_id: str, embedding: list[float]) -> int:
         """Update embedding of an existing memory. Returns rows affected (0 if not found)."""
         with self._db() as db:
-            rows = db.query(MemoryRecord).filter_by(memory_id=memory_id).update({"embedding": embedding})
+            rows = (
+                db.query(MemoryRecord)
+                .filter_by(memory_id=memory_id)
+                .update({"embedding": embedding})
+            )
             db.commit()
             return rows
 
     def update_confidence(
-        self, memory_id: str, confidence: float,
-        trust_tier: str | None = None, is_active: bool | None = None,
+        self,
+        memory_id: str,
+        confidence: float,
+        trust_tier: str | None = None,
+        is_active: bool | None = None,
     ) -> None:
         """Update confidence (and optionally tier/active) for opinion evolution."""
         with self._db() as db:
@@ -165,7 +178,9 @@ class MemoryStore(DbConsumer):
                 q = db.query(MemoryRecord)
             else:
                 # Skip embedding column (~6KB/row) when not needed
-                cols = [c for c in MemoryRecord.__table__.columns if c.name != "embedding"]
+                cols = [
+                    c for c in MemoryRecord.__table__.columns if c.name != "embedding"
+                ]
                 q = db.query(*cols)
             q = q.filter(
                 MemoryRecord.user_id == user_id,
@@ -188,9 +203,13 @@ class MemoryStore(DbConsumer):
             new_memory.observed_at = now
 
         with self._db() as db:
-            db.query(MemoryRecord).filter_by(memory_id=old_id).update({
-                "is_active": 0, "superseded_by": new_memory.memory_id, "updated_at": now,
-            })
+            db.query(MemoryRecord).filter_by(memory_id=old_id).update(
+                {
+                    "is_active": 0,
+                    "superseded_by": new_memory.memory_id,
+                    "updated_at": now,
+                }
+            )
 
             row = MemoryRecord(
                 memory_id=new_memory.memory_id,
@@ -214,10 +233,14 @@ class MemoryStore(DbConsumer):
         """Archive all WORKING memories for a session (set is_active=0)."""
         with self._db() as db:
             from sqlalchemy import text as sa_text
-            result = db.execute(sa_text("""
+
+            result = db.execute(
+                sa_text("""
                 UPDATE mem_memories SET is_active = 0, updated_at = NOW()
                 WHERE session_id = :sid AND memory_type = 'working' AND is_active = 1
-            """), {"sid": session_id})
+            """),
+                {"sid": session_id},
+            )
             db.commit()
             return result.rowcount
 

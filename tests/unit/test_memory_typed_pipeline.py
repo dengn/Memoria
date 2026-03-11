@@ -5,7 +5,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from memoria.core.memory.tabular.typed_pipeline import run_typed_memory_pipeline, TypedPipelineResult
+from memoria.core.memory.tabular.typed_pipeline import (
+    run_typed_memory_pipeline,
+    TypedPipelineResult,
+)
 from memoria.core.memory.config import MemoryGovernanceConfig
 
 
@@ -17,11 +20,17 @@ def mock_db():
 class TestTypedPipeline:
     def test_extracts_memories(self, mock_db):
         mock_llm = MagicMock()
-        mock_llm.chat_with_tools.return_value = {"content": json.dumps([
-            {"type": "profile", "content": "likes Go", "confidence": 0.9},
-        ])}
+        mock_llm.chat_with_tools.return_value = {
+            "content": json.dumps(
+                [
+                    {"type": "profile", "content": "likes Go", "confidence": 0.9},
+                ]
+            )
+        }
 
-        with patch("memoria.core.memory.tabular.typed_pipeline.MemoryStore") as MockStore:
+        with patch(
+            "memoria.core.memory.tabular.typed_pipeline.MemoryStore"
+        ) as MockStore:
             mock_store = MagicMock()
             mock_store.create.side_effect = lambda m: m
             mock_store.list_active.return_value = []
@@ -38,11 +47,17 @@ class TestTypedPipeline:
 
     def test_detects_profile_change(self, mock_db):
         mock_llm = MagicMock()
-        mock_llm.chat_with_tools.return_value = {"content": json.dumps([
-            {"type": "profile", "content": "prefers vim", "confidence": 0.9},
-        ])}
+        mock_llm.chat_with_tools.return_value = {
+            "content": json.dumps(
+                [
+                    {"type": "profile", "content": "prefers vim", "confidence": 0.9},
+                ]
+            )
+        }
 
-        with patch("memoria.core.memory.tabular.typed_pipeline.MemoryStore") as MockStore:
+        with patch(
+            "memoria.core.memory.tabular.typed_pipeline.MemoryStore"
+        ) as MockStore:
             mock_store = MagicMock()
             mock_store.create.side_effect = lambda m: m
             mock_store.list_active.return_value = []
@@ -59,11 +74,21 @@ class TestTypedPipeline:
 
     def test_no_profile_change_for_semantic(self, mock_db):
         mock_llm = MagicMock()
-        mock_llm.chat_with_tools.return_value = {"content": json.dumps([
-            {"type": "semantic", "content": "discussed testing", "confidence": 0.7},
-        ])}
+        mock_llm.chat_with_tools.return_value = {
+            "content": json.dumps(
+                [
+                    {
+                        "type": "semantic",
+                        "content": "discussed testing",
+                        "confidence": 0.7,
+                    },
+                ]
+            )
+        }
 
-        with patch("memoria.core.memory.tabular.typed_pipeline.MemoryStore") as MockStore:
+        with patch(
+            "memoria.core.memory.tabular.typed_pipeline.MemoryStore"
+        ) as MockStore:
             mock_store = MagicMock()
             mock_store.create.side_effect = lambda m: m
             mock_store.list_active.return_value = []
@@ -95,7 +120,9 @@ class TestTypedPipeline:
         assert result.memories_extracted == 0
 
     def test_handles_observer_error(self, mock_db):
-        with patch("memoria.core.memory.tabular.typed_pipeline.TypedObserver") as MockObs:
+        with patch(
+            "memoria.core.memory.tabular.typed_pipeline.TypedObserver"
+        ) as MockObs:
             MockObs.side_effect = Exception("Observer failed")
 
             result = run_typed_memory_pipeline(

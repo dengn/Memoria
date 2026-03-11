@@ -7,7 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class MemoriaSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="MEMORIA_",
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
     )
 
     # Database
@@ -18,16 +21,34 @@ class MemoriaSettings(BaseSettings):
     db_name: str = "memoria"
 
     # Embedding — default "mock" for zero-config startup; set to "openai" or "local" in production
-    embedding_provider: str = Field(default="mock", alias="EMBEDDING_PROVIDER", validation_alias="EMBEDDING_PROVIDER")
-    embedding_model: str = Field(default="BAAI/bge-m3", alias="EMBEDDING_MODEL", validation_alias="EMBEDDING_MODEL")
-    embedding_dim: int = Field(default=0, alias="EMBEDDING_DIM", validation_alias="EMBEDDING_DIM", description="0 = auto-infer")
-    embedding_api_key: str = Field(default="", alias="EMBEDDING_API_KEY", validation_alias="EMBEDDING_API_KEY")
-    embedding_base_url: str | None = Field(default=None, alias="EMBEDDING_BASE_URL", validation_alias="EMBEDDING_BASE_URL")
+    embedding_provider: str = Field(
+        default="mock",
+        alias="EMBEDDING_PROVIDER",
+        validation_alias="EMBEDDING_PROVIDER",
+    )
+    embedding_model: str = Field(
+        default="BAAI/bge-m3",
+        alias="EMBEDDING_MODEL",
+        validation_alias="EMBEDDING_MODEL",
+    )
+    embedding_dim: int = Field(
+        default=0,
+        alias="EMBEDDING_DIM",
+        validation_alias="EMBEDDING_DIM",
+        description="0 = auto-infer",
+    )
+    embedding_api_key: str = Field(
+        default="", alias="EMBEDDING_API_KEY", validation_alias="EMBEDDING_API_KEY"
+    )
+    embedding_base_url: str | None = Field(
+        default=None, alias="EMBEDDING_BASE_URL", validation_alias="EMBEDDING_BASE_URL"
+    )
 
     @model_validator(mode="after")
     def infer_embedding_dim(self) -> "MemoriaSettings":
         if self.embedding_dim == 0 and self.embedding_provider != "mock":
             from memoria.core.embedding.client import KNOWN_DIMENSIONS
+
             inferred = KNOWN_DIMENSIONS.get(self.embedding_model)
             if inferred is None:
                 raise ValueError(
@@ -38,7 +59,10 @@ class MemoriaSettings(BaseSettings):
         return self
 
     # Auth
-    master_key: str = Field(default="", description="Master API key for admin operations (min 16 chars in production)")
+    master_key: str = Field(
+        default="",
+        description="Master API key for admin operations (min 16 chars in production)",
+    )
 
     # LLM (optional — for reflect + entity extraction)
     llm_api_key: str = ""

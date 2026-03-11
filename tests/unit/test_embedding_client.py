@@ -10,6 +10,7 @@ from tests.conftest import TEST_EMBEDDING_DIM
 
 # ── MockProvider ──────────────────────────────────────────────────────
 
+
 class TestMockProvider:
     def test_deterministic(self):
         c = EmbeddingClient(provider="mock", model="mock", dim=TEST_EMBEDDING_DIM)
@@ -36,6 +37,7 @@ class TestMockProvider:
 
 # ── Fail fast ─────────────────────────────────────────────────────────
 
+
 class TestFailFast:
     def test_unknown_provider_raises(self):
         with pytest.raises(ValueError, match="Unknown embedding provider"):
@@ -43,7 +45,9 @@ class TestFailFast:
 
     def test_openai_missing_api_key_raises(self):
         with pytest.raises(ValueError, match="requires api_key"):
-            EmbeddingClient(provider="openai", model="text-embedding-3-small", dim=1536, api_key="")
+            EmbeddingClient(
+                provider="openai", model="text-embedding-3-small", dim=1536, api_key=""
+            )
 
     @pytest.mark.local_embedding
     def test_local_dimension_mismatch_raises(self):
@@ -53,6 +57,7 @@ class TestFailFast:
 
 
 # ── LocalProvider ─────────────────────────────────────────────────────
+
 
 @pytest.mark.local_embedding
 class TestLocalProvider:
@@ -77,6 +82,7 @@ class TestLocalProvider:
     def test_model_cache_reuse(self):
         """Second instantiation should reuse cached model."""
         from memoria.core.embedding.providers import _local_model_cache
+
         c1 = EmbeddingClient(provider="local", model="all-MiniLM-L6-v2", dim=384)
         assert "all-MiniLM-L6-v2" in _local_model_cache
         c2 = EmbeddingClient(provider="local", model="all-MiniLM-L6-v2", dim=384)
@@ -90,6 +96,7 @@ class TestLocalProvider:
 
 # ── OpenAIProvider ────────────────────────────────────────────────────
 
+
 class TestOpenAIProvider:
     def test_calls_api_with_correct_params(self):
         mock_client = MagicMock()
@@ -99,13 +106,17 @@ class TestOpenAIProvider:
 
         with patch("openai.OpenAI", return_value=mock_client):
             c = EmbeddingClient(
-                provider="openai", model="text-embedding-3-small",
-                dim=1536, api_key="sk-test",
+                provider="openai",
+                model="text-embedding-3-small",
+                dim=1536,
+                api_key="sk-test",
             )
             vec = c.embed("hello")
 
         mock_client.embeddings.create.assert_called_once_with(
-            model="text-embedding-3-small", input="hello", dimensions=1536,
+            model="text-embedding-3-small",
+            input="hello",
+            dimensions=1536,
         )
         assert len(vec) == 1536
 
@@ -116,8 +127,10 @@ class TestOpenAIProvider:
 
         with patch("openai.OpenAI", return_value=mock_client):
             c = EmbeddingClient(
-                provider="openai", model="text-embedding-3-small",
-                dim=1536, api_key="sk-test",
+                provider="openai",
+                model="text-embedding-3-small",
+                dim=1536,
+                api_key="sk-test",
             )
             with pytest.raises(RuntimeError, match="API down"):
                 c.embed("hello")
@@ -126,19 +139,26 @@ class TestOpenAIProvider:
         mock_cls = MagicMock()
         with patch("openai.OpenAI", mock_cls):
             EmbeddingClient(
-                provider="openai", model="m", dim=1536,
-                api_key="sk-test", base_url="https://custom.api/v1",
+                provider="openai",
+                model="m",
+                dim=1536,
+                api_key="sk-test",
+                base_url="https://custom.api/v1",
             )
-        mock_cls.assert_called_once_with(api_key="sk-test", base_url="https://custom.api/v1")
+        mock_cls.assert_called_once_with(
+            api_key="sk-test", base_url="https://custom.api/v1"
+        )
 
 
 # ── Startup validation ────────────────────────────────────────────────
+
 
 class TestStartupValidation:
     def test_local_provider_without_sentence_transformers(self):
         """If sentence-transformers is not installed, local provider should fail fast."""
         with patch.dict("sys.modules", {"sentence_transformers": None}):
             from memoria.core.embedding.providers import _local_model_cache
+
             # Clear cache to force reload attempt
             old = _local_model_cache.copy()
             _local_model_cache.clear()
@@ -156,6 +176,7 @@ class TestStartupValidation:
 
 
 # ── KNOWN_DIMENSIONS validation ───────────────────────────────────────
+
 
 class TestKnownDimensions:
     def test_known_model_wrong_dim_raises(self):
@@ -175,12 +196,14 @@ class TestKnownDimensions:
     def test_all_known_models_correct_dim(self):
         """Smoke test: every entry in KNOWN_DIMENSIONS passes its own check."""
         from memoria.core.embedding.client import KNOWN_DIMENSIONS
+
         for model, dim in KNOWN_DIMENSIONS.items():
             c = EmbeddingClient(provider="mock", model=model, dim=dim)
             assert c.dimension == dim
 
 
 # ── Settings auto-infer ───────────────────────────────────────────────
+
 
 class TestSettingsInfer:
     def test_known_model_auto_infers_dim(self, monkeypatch):
@@ -189,6 +212,7 @@ class TestSettingsInfer:
         monkeypatch.setenv("EMBEDDING_DIM", "0")
         from importlib import reload
         import memoria.config as s
+
         reload(s)
         settings = s.MemoriaSettings()
         assert settings.embedding_dim == 1024
@@ -198,6 +222,7 @@ class TestSettingsInfer:
         monkeypatch.setenv("EMBEDDING_DIM", "1024")
         from importlib import reload
         import memoria.config as s
+
         reload(s)
         settings = s.MemoriaSettings()
         assert settings.embedding_dim == 1024
@@ -208,6 +233,7 @@ class TestSettingsInfer:
         monkeypatch.setenv("EMBEDDING_DIM", "0")
         from importlib import reload
         import memoria.config as s
+
         reload(s)
         with pytest.raises(Exception, match="not in KNOWN_DIMENSIONS"):
             s.MemoriaSettings()
@@ -223,6 +249,7 @@ class TestSaTypesEmbeddingDim:
             monkeypatch.setenv("EMBEDDING_DIM", value)
         from importlib import reload
         import memoria.core.memory.models._sa_types as m
+
         reload(m)
         return m.EMBEDDING_DIM
 

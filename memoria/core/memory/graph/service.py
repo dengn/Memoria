@@ -14,11 +14,18 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from memoria.core.memory.graph.candidates import GraphCandidateProvider
-from memoria.core.memory.graph.consolidation import ConsolidationResult, GraphConsolidator
+from memoria.core.memory.graph.consolidation import (
+    ConsolidationResult,
+    GraphConsolidator,
+)
 from memoria.core.memory.graph.graph_builder import GraphBuilder
 from memoria.core.memory.graph.graph_store import GraphStore
 from memoria.core.memory.graph.retriever import ActivationRetriever
-from memoria.core.memory.interfaces import GovernanceReport, HealthReport, ReflectionCandidate
+from memoria.core.memory.interfaces import (
+    GovernanceReport,
+    HealthReport,
+    ReflectionCandidate,
+)
 from memoria.core.memory.types import Memory, MemoryType, RetrievalWeights, TrustTier
 
 if TYPE_CHECKING:
@@ -54,6 +61,7 @@ class GraphMemoryService:
 
         if config is None:
             from memoria.core.memory.config import DEFAULT_CONFIG
+
             self._config = DEFAULT_CONFIG
         else:
             self._config = config
@@ -94,14 +102,17 @@ class GraphMemoryService:
     def _candidates(self) -> GraphCandidateProvider:
         if self._graph_candidates is None:
             self._graph_candidates = GraphCandidateProvider(
-                self._db_factory, config=self._config,
+                self._db_factory,
+                config=self._config,
             )
         return self._graph_candidates
 
     @property
     def _consolidator(self) -> GraphConsolidator:
         if self._graph_consolidator is None:
-            self._graph_consolidator = GraphConsolidator(self._db_factory, config=self._config)
+            self._graph_consolidator = GraphConsolidator(
+                self._db_factory, config=self._config
+            )
         return self._graph_consolidator
 
     @property
@@ -109,6 +120,7 @@ class GraphMemoryService:
         """Tabular backend for dual-write and fallback."""
         if self._tabular is None:
             from memoria.core.memory.tabular.service import TabularMemoryService
+
             self._tabular = TabularMemoryService(
                 self._db_factory,
                 llm_client=self._llm_client,
@@ -136,16 +148,23 @@ class GraphMemoryService:
         if query_embedding:
             try:
                 activated = self._retriever.retrieve(
-                    user_id, query, query_embedding, top_k=top_k,
+                    user_id,
+                    query,
+                    query_embedding,
+                    top_k=top_k,
                     task_type=task_hint,
                 )
                 if activated:
                     return self._nodes_to_memories(activated)
             except _RECOVERABLE:
-                logger.warning("Activation retrieval failed, falling back to tabular", exc_info=True)
+                logger.warning(
+                    "Activation retrieval failed, falling back to tabular",
+                    exc_info=True,
+                )
 
         result = self._tabular_delegate.retrieve(
-            user_id, query,
+            user_id,
+            query,
             session_id=session_id,
             query_embedding=query_embedding,
             memory_types=memory_types,
@@ -165,16 +184,18 @@ class GraphMemoryService:
                 tier = TrustTier(node.trust_tier)
             except ValueError:
                 tier = TrustTier.T3_INFERRED
-            memories.append(Memory(
-                memory_id=node.memory_id or node.node_id,
-                user_id=node.user_id,
-                memory_type=MemoryType.SEMANTIC,
-                content=node.content,
-                initial_confidence=node.confidence,
-                embedding=node.embedding,
-                session_id=node.session_id,
-                trust_tier=tier,
-            ))
+            memories.append(
+                Memory(
+                    memory_id=node.memory_id or node.node_id,
+                    user_id=node.user_id,
+                    memory_type=MemoryType.SEMANTIC,
+                    content=node.content,
+                    initial_confidence=node.confidence,
+                    embedding=node.embedding,
+                    session_id=node.session_id,
+                    trust_tier=tier,
+                )
+            )
         return memories
 
     def get_profile(self, user_id: str) -> str | None:
@@ -200,7 +221,8 @@ class GraphMemoryService:
         Programming errors (TypeError, etc.) are NOT caught.
         """
         mem = self._tabular_delegate.store(
-            user_id, content,
+            user_id,
+            content,
             memory_type=memory_type,
             source_event_ids=source_event_ids,
             initial_confidence=initial_confidence,
@@ -213,7 +235,8 @@ class GraphMemoryService:
         except _RECOVERABLE:
             logger.warning(
                 "Graph ingest failed for memory %s, queued for retry",
-                mem.memory_id, exc_info=True,
+                mem.memory_id,
+                exc_info=True,
             )
             self._pending_graph_sync.append(mem.memory_id)
         return mem
@@ -227,20 +250,31 @@ class GraphMemoryService:
     ) -> list[Memory]:
         """Extract memories from a turn and build graph."""
         memories = self._tabular_delegate.observe_turn(
-            user_id, messages, source_event_ids=source_event_ids,
+            user_id,
+            messages,
+            source_event_ids=source_event_ids,
         )
-        events = [{"event_id": eid, "event_type": "unknown"} for eid in (source_event_ids or [])]
+        events = [
+            {"event_id": eid, "event_type": "unknown"}
+            for eid in (source_event_ids or [])
+        ]
         try:
             session_id = memories[0].session_id if memories else None
-            created = self._builder.ingest(user_id, memories, events, session_id=session_id)
+            created = self._builder.ingest(
+                user_id, memories, events, session_id=session_id
+            )
             self._run_opinion_evolution(user_id, created)
         except _RECOVERABLE:
-            logger.warning("Graph ingest failed for turn, queued for retry", exc_info=True)
+            logger.warning(
+                "Graph ingest failed for turn, queued for retry", exc_info=True
+            )
             self._pending_graph_sync.extend(m.memory_id for m in memories)
         return memories
 
     def _run_opinion_evolution(
-        self, user_id: str, created_nodes: list[Any],
+        self,
+        user_id: str,
+        created_nodes: list[Any],
     ) -> None:
         """Run opinion evolution for newly created nodes with embeddings."""
         from memoria.core.memory.graph.opinion import evolve_opinions
@@ -249,15 +283,22 @@ class GraphMemoryService:
             if not node.embedding:
                 continue
             try:
-                result = evolve_opinions(self._store, node.node_id, user_id, self._config)
+                result = evolve_opinions(
+                    self._store, node.node_id, user_id, self._config
+                )
                 if result.scenes_evaluated:
                     logger.debug(
                         "Opinion evolution for %s: %d scenes, %d supporting, %d contradicting, %d quarantined",
-                        node.node_id, result.scenes_evaluated,
-                        result.supporting, result.contradicting, result.quarantined,
+                        node.node_id,
+                        result.scenes_evaluated,
+                        result.supporting,
+                        result.contradicting,
+                        result.quarantined,
                     )
             except _RECOVERABLE:
-                logger.warning("Opinion evolution failed for node %s", node.node_id, exc_info=True)
+                logger.warning(
+                    "Opinion evolution failed for node %s", node.node_id, exc_info=True
+                )
 
     # ── Pending sync ──────────────────────────────────────────────────
 
@@ -315,16 +356,20 @@ class GraphMemoryService:
         """Get reflection candidates from graph activation patterns."""
         try:
             candidates = self._candidates.get_reflection_candidates(
-                user_id, since_hours=since_hours,
+                user_id,
+                since_hours=since_hours,
             )
             if candidates:
                 return candidates
         except _RECOVERABLE:
-            logger.warning("Graph candidate selection failed, falling back", exc_info=True)
+            logger.warning(
+                "Graph candidate selection failed, falling back", exc_info=True
+            )
 
         # Fallback to tabular candidates
         return self._tabular_delegate._governance_lazy.get_reflection_candidates(
-            user_id, since_hours=since_hours,
+            user_id,
+            since_hours=since_hours,
         )
 
     # ── Graph-specific ────────────────────────────────────────────────
@@ -352,7 +397,9 @@ class GraphMemoryService:
 
         # Get semantic nodes without entity_link edges
         semantic_nodes = self._store.get_user_nodes(
-            user_id, node_type=NodeType.SEMANTIC, active_only=True,
+            user_id,
+            node_type=NodeType.SEMANTIC,
+            active_only=True,
             load_embedding=False,
         )
         if not semantic_nodes:
@@ -362,7 +409,8 @@ class GraphMemoryService:
         node_ids = {n.node_id for n in semantic_nodes}
         existing_edges = self._store.get_edges_for_nodes(node_ids)
         linked_ids = {
-            nid for nid, edges in existing_edges.items()
+            nid
+            for nid, edges in existing_edges.items()
             if any(e.edge_type == EdgeType.ENTITY_LINK.value for e in edges)
         }
         unlinked = [n for n in semantic_nodes if n.node_id not in linked_ids]
@@ -386,7 +434,10 @@ class GraphMemoryService:
 
         # Use unified linking
         created, pending_edges, _reused = self._store.link_entities_batch(
-            user_id, unlinked, entities_per_node, source="llm",
+            user_id,
+            unlinked,
+            entities_per_node,
+            source="llm",
         )
         if pending_edges:
             self._store.add_edges_batch(pending_edges, user_id)

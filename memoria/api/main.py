@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     # Warn about weak master key
     from memoria.config import get_settings
     import logging
+
     warning = get_settings().warn_weak_master_key()
     if warning:
         logging.getLogger("memoria").warning(warning)
@@ -44,9 +45,16 @@ async def lifespan(app: FastAPI):
     init_db()
 
     # Start periodic governance scheduler (hourly/daily/weekly)
-    from memoria.core.scheduler import GovernanceTaskRunner, AsyncIOBackend, MemoryGovernanceScheduler
+    from memoria.core.scheduler import (
+        GovernanceTaskRunner,
+        AsyncIOBackend,
+        MemoryGovernanceScheduler,
+    )
     from memoria.api.database import get_db_context, get_db_factory
-    runner = GovernanceTaskRunner(get_db_context, db_factory=get_db_factory(), memory_only=True)
+
+    runner = GovernanceTaskRunner(
+        get_db_context, db_factory=get_db_factory(), memory_only=True
+    )
     backend = AsyncIOBackend(runner)
     scheduler = MemoryGovernanceScheduler(backend=backend)
     await scheduler.start()
@@ -67,10 +75,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["*"], allow_headers=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 from memoria.api.middleware import RateLimitMiddleware  # noqa: E402
+
 app.add_middleware(RateLimitMiddleware)
 
 from memoria.api.routers import auth, memory, snapshots, health, admin, user_ops  # noqa: E402
