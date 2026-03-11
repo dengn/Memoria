@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json as _json
 import httpx
 from mcp.server import FastMCP
 
@@ -13,11 +14,24 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
         base_url=api_url, headers={"Authorization": f"Bearer {api_key}"}, timeout=30
     )
 
+    def _json_dumps(obj: dict | list) -> str:
+        return _json.dumps(obj, ensure_ascii=False)
+
     @server.tool()
     async def memory_store(
-        content: str, memory_type: str = "semantic", session_id: str | None = None
+        content: str,
+        memory_type: str = "semantic",
+        session_id: str | None = None,
+        format: str = "text",
     ) -> str:
-        """Store a memory."""
+        """Store a memory.
+
+        Args:
+            content: The memory content to store.
+            memory_type: One of: profile, semantic, procedural, working, tool_result.
+            session_id: Session context (optional).
+            format: 'text' (default) or 'json' for structured response.
+        """
         r = client.post(
             "/v1/memories",
             json={
@@ -28,25 +42,71 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
         )
         r.raise_for_status()
         d = r.json()
+        if format == "json":
+            return _json_dumps(
+                {"status": "ok", "memory_id": d["memory_id"], "content": d["content"]}
+            )
         return f"Stored memory {d['memory_id']}: {d['content'][:80]}"
 
     @server.tool()
-    async def memory_retrieve(query: str, top_k: int = 5) -> str:
-        """Retrieve relevant memories for a query."""
+    async def memory_retrieve(query: str, top_k: int = 5, format: str = "text") -> str:
+        """Retrieve relevant memories for a query.
+
+        Args:
+            query: What to search for in memories.
+            top_k: Max number of memories to return (default 5).
+            format: 'text' (default) or 'json' for structured response.
+        """
         r = client.post("/v1/memories/retrieve", json={"query": query, "top_k": top_k})
         r.raise_for_status()
         items = r.json()
+        if format == "json":
+            return _json_dumps(
+                {
+                    "status": "ok",
+                    "count": len(items),
+                    "memories": [
+                        {
+                            "memory_id": m.get("memory_id", ""),
+                            "type": m.get("memory_type", "fact"),
+                            "content": m["content"],
+                        }
+                        for m in items
+                    ],
+                }
+            )
         if not items:
             return "No relevant memories found."
         lines = [f"- [{m['memory_type']}] {m['content']}" for m in items]
         return "\n".join(lines)
 
     @server.tool()
-    async def memory_search(query: str, top_k: int = 10) -> str:
-        """Semantic search over all memories."""
+    async def memory_search(query: str, top_k: int = 10, format: str = "text") -> str:
+        """Semantic search over all memories.
+
+        Args:
+            query: Search query.
+            top_k: Max results (default 10).
+            format: 'text' (default) or 'json' for structured response.
+        """
         r = client.post("/v1/memories/search", json={"query": query, "top_k": top_k})
         r.raise_for_status()
         items = r.json()
+        if format == "json":
+            return _json_dumps(
+                {
+                    "status": "ok",
+                    "count": len(items),
+                    "memories": [
+                        {
+                            "memory_id": m["memory_id"],
+                            "type": m.get("memory_type", "fact"),
+                            "content": m["content"],
+                        }
+                        for m in items
+                    ],
+                }
+            )
         if not items:
             return "No memories found."
         lines = [
@@ -60,9 +120,22 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
         new_content: str = "",
         reason: str = "",
         query: str | None = None,
+        format: str = "text",
     ) -> str:
-        """Correct an existing memory. Provide memory_id to correct by ID, or query to find and correct by semantic search."""
+        """Correct an existing memory. Provide memory_id to correct by ID, or query to find and correct by semantic search.
+
+        Args:
+            memory_id: ID of the memory to correct.
+            new_content: The corrected content.
+            reason: Why the correction is needed.
+            query: Search query to find the memory to correct.
+            format: 'text' (default) or 'json' for structured response.
+        """
         if not new_content:
+            if format == "json":
+                return _json_dumps(
+                    {"status": "error", "error": "new_content is required."}
+                )
             return "new_content is required."
         if query and not memory_id:
             r = client.post(
@@ -70,11 +143,27 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
                 json={"query": query, "new_content": new_content, "reason": reason},
             )
             if r.status_code == 404:
-                return f"No memory found matching '{query}'"
+                msg = f"No memory found matching '{query}'"
+                if format == "json":
+                    return _json_dumps({"status": "error", "error": msg})
+                return msg
             r.raise_for_status()
             d = r.json()
+            if format == "json":
+                return _json_dumps(
+                    {
+                        "status": "ok",
+                        "memory_id": d["memory_id"],
+                        "content": d["content"],
+                        "matched_content": d.get("matched_content", ""),
+                    }
+                )
             return f"Found '{d.get('matched_content', '')}' → corrected to {d['memory_id']}: {d['content'][:80]}"
         if not memory_id:
+            if format == "json":
+                return _json_dumps(
+                    {"status": "error", "error": "Provide either memory_id or query."}
+                )
             return "Provide either memory_id or query."
         r = client.put(
             f"/v1/memories/{memory_id}/correct",
@@ -82,19 +171,35 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
         )
         r.raise_for_status()
         d = r.json()
+        if format == "json":
+            return _json_dumps(
+                {"status": "ok", "memory_id": d["memory_id"], "content": d["content"]}
+            )
         return f"Corrected memory {d['memory_id']}: {d['content'][:80]}"
 
     @server.tool()
-    async def memory_purge(memory_id: str, reason: str = "") -> str:
-        """Delete a memory."""
+    async def memory_purge(
+        memory_id: str, reason: str = "", format: str = "text"
+    ) -> str:
+        """Delete a memory.
+
+        Args:
+            memory_id: ID of the memory to delete.
+            reason: Why it should be deleted.
+            format: 'text' (default) or 'json' for structured response.
+        """
         r = client.delete(f"/v1/memories/{memory_id}", params={"reason": reason})
         r.raise_for_status()
+        if format == "json":
+            return _json_dumps({"status": "ok", "purged": 1, "memory_id": memory_id})
         return f"Purged memory {memory_id}"
 
     @server.tool()
     async def memory_profile() -> str:
-        """Get current user's memory profile."""
-        # API resolves user_id from the API key — use a fixed placeholder
+        """Get current user's memory profile.
+
+        Note: user_id is resolved server-side from the API key. No user_id parameter needed.
+        """
         r = client.get("/v1/profiles/me")
         r.raise_for_status()
         return str(r.json())
@@ -178,11 +283,9 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
 
     @server.tool()
     async def memory_link_entities(entities: str) -> str:
-        """Write entity links from extraction results. entities: JSON [{\"memory_id\": \"...\", \"entities\": [{\"name\": \"...\", \"type\": \"...\"}]}]"""
-        import json
-
+        """Write entity links from extraction results. entities: JSON [{"memory_id": "...", "entities": [{"name": "...", "type": "..."}]}]"""
         try:
-            parsed = json.loads(entities)
+            parsed = _json.loads(entities)
         except (ValueError, TypeError):
             return "Invalid JSON."
         r = client.post("/v1/extract-entities/link", json={"entities": parsed})
@@ -209,6 +312,37 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
         for m in d.get("removed", []):
             lines.append(f"  - [{m['memory_type']}] {m['content']}")
         return "\n".join(lines)
+
+    @server.tool()
+    async def memory_capabilities() -> str:
+        """List available memory tools and current backend mode.
+
+        Call this to discover which tools are available. Cloud mode has fewer tools than local mode
+        (no branching, no governance, no index rebuild).
+        """
+        tools = [
+            "memory_store",
+            "memory_retrieve",
+            "memory_search",
+            "memory_correct",
+            "memory_purge",
+            "memory_profile",
+            "memory_capabilities",
+            "memory_snapshot",
+            "memory_snapshots",
+            "memory_snapshot_diff",
+            "memory_extract_entities",
+            "memory_link_entities",
+            "memory_consolidate",
+            "memory_reflect",
+        ]
+        return _json_dumps(
+            {
+                "mode": "cloud",
+                "tools": sorted(tools),
+                "note": "Branching, governance, and index rebuild are not available in cloud mode.",
+            }
+        )
 
     return server
 

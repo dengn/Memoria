@@ -21,6 +21,26 @@ After responding, decide if anything is worth remembering:
 
 If `memory_store` or `memory_correct` response contains ⚠️, tell the user — it means the embedding service is down and retrieval will degrade to keyword-only search.
 
+## 🟡 When NOT to store (noise reduction)
+Do NOT call `memory_store` for:
+- **Transient debug context**: temporary print statements, one-off test values, ephemeral error messages
+- **Vague or low-confidence observations**: "might be using X", "probably prefers Y" — wait for confirmation
+- **Conversation-specific context** that won't matter next session: "currently looking at line 42", "just ran the test"
+- **Information already in memory**: if `memory_retrieve` already returned it, don't store again
+- **Trivial or obvious facts**: "user is writing code", "user asked a question"
+
+## 🟡 Correction workflow (prefer correct over store+purge)
+When the user contradicts a previously stored fact:
+1. **Always use `memory_correct`** — not `memory_store` + `memory_purge`. This preserves the audit trail.
+2. **Prefer query-based correction**: `memory_correct(query="formatting tool", new_content="Uses ruff for formatting", reason="switched from black")` — no need to look up memory_id first.
+3. **Only use `memory_purge`** when the user explicitly asks to forget something entirely, not when updating a fact.
+
+## 🟡 Deduplication before storing
+Before storing a new memory, consider:
+- Did `memory_retrieve` at conversation start already return a similar fact? → skip or `memory_correct` instead
+- Is this a refinement of something already stored? → use `memory_correct` with the original as query
+- When in doubt, `memory_search` with the key phrase first — if a match exists, correct it rather than creating a duplicate
+
 ## Tool reference
 
 ### Write tools

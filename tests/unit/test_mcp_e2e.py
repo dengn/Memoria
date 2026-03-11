@@ -54,7 +54,7 @@ class FakeBackend(MemoryBackend):
             results = [
                 {
                     "memory_id": mid,
-                    "memory_type": r["memory_type"],
+                    "type": r["memory_type"],
                     "content": r["content"],
                 }
                 for mid, r in self._memories.items()
@@ -102,16 +102,27 @@ class FakeBackend(MemoryBackend):
     # ── Maintenance (stubs) ───────────────────────────────────────────
 
     def governance(self, user_id: str, force: bool = False) -> dict:
-        return {"status": "ok", "needs_rebuild": False}
+        return {
+            "quarantined": 1,
+            "cleaned_stale": 2,
+            "scenes_created": 0,
+            "vector_index_health": {},
+        }
 
     def consolidate(self, user_id: str, force: bool = False) -> dict:
-        return {"status": "ok"}
+        return {
+            "merged_nodes": 1,
+            "conflicts_detected": 0,
+            "orphaned_scenes": 0,
+            "promoted": 0,
+            "demoted": 0,
+        }
 
     def reflect(self, user_id: str, force: bool = False) -> dict:
-        return {"status": "ok"}
+        return {"scenes_created": 1, "candidates_found": 3}
 
     def rebuild_index(self, table: str) -> str:
-        return f"Rebuilt index for {table}"
+        return f"Rebuilt IVF index for {table}: lists 0 → 4 (rows=10)"
 
     def health_warnings(self, user_id: str) -> list[str]:
         return []
@@ -177,20 +188,54 @@ class FakeBackend(MemoryBackend):
     ) -> dict:
         matches = self.retrieve(user_id, query, 1)
         if not matches:
-            raise KeyError(f"No memory found for query: {query}")
-        return self.correct(user_id, matches[0]["memory_id"], new_content, reason)
+            return {
+                "error": "no_match",
+                "message": f"No memory found matching '{query}'",
+            }
+        mid = matches[0]["memory_id"]
+        matched_content = matches[0]["content"]
+        result = self.correct(user_id, mid, new_content, reason)
+        result["matched_memory_id"] = mid
+        result["matched_content"] = matched_content
+        return result
 
     def extract_entities(self, user_id: str) -> dict:
-        return {"status": "ok", "entities_extracted": 0}
+        return {"total_memories": 3, "entities_found": 2, "edges_created": 4}
 
     def get_entity_candidates(self, user_id: str) -> dict:
-        return {"candidates": []}
+        with self._lock:
+            mems = [
+                {"memory_id": mid, "content": r["content"]}
+                for mid, r in self._memories.items()
+                if r["user_id"] == user_id
+            ][:5]
+        return {
+            "memories": mems,
+            "existing_entities": [{"name": "python", "entity_type": "tech"}],
+        }
 
     def get_reflect_candidates(self, user_id: str) -> dict:
-        return {"candidates": []}
+        with self._lock:
+            mems = [
+                {"memory_id": mid, "content": r["content"], "type": r["memory_type"]}
+                for mid, r in self._memories.items()
+                if r["user_id"] == user_id
+            ][:3]
+        if not mems:
+            return {"candidates": []}
+        return {
+            "candidates": [
+                {"signal": "preference_cluster", "importance": 0.85, "memories": mems}
+            ]
+        }
 
     def link_entities(self, user_id: str, entities: list[dict]) -> dict:
-        return {"status": "ok", "linked": len(entities)}
+        total_ents = sum(len(e.get("entities", [])) for e in entities)
+        return {
+            "entities_created": total_ents,
+            "entities_reused": 0,
+            "edges_created": total_ents,
+        }
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -374,3 +419,128 @@ async def test_concurrent_purge_no_double_delete(server, backend):
     ]
     await asyncio.gather(*tasks)
     assert mid not in backend._memories
+
+
+# ── Maintenance tool MCP tests ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_governance(server):
+    result = await call(server, "memory_governance")
+    assert "Governance done" in result
+    assert "quarantined=1" in result
+    assert "cleaned_stale=2" in result
+
+
+@pytest.mark.asyncio
+async def test_consolidate(server):
+    result = await call(server, "memory_consolidate")
+    assert "Consolidation done" in result
+    assert "merged_nodes=1" in result
+
+
+@pytest.mark.asyncio
+async def test_reflect_internal(server):
+    """Reflect with internal mode returns done message."""
+    result = await call(server, "memory_reflect", mode="internal")
+    assert "Reflection done" in result
+    assert "scenes_created=1" in result
+
+
+@pytest.mark.asyncio
+async def test_reflect_candidates(server, backend):
+    """Reflect with candidates mode returns clusters when memories exist."""
+    backend.store("test_user", "I prefer pytest", "profile", None)
+    backend.store("test_user", "Always use black formatter", "profile", None)
+    result = await call(server, "memory_reflect", mode="candidates")
+    assert "Cluster 1" in result
+    assert "preference_cluster" in result
+
+
+@pytest.mark.asyncio
+async def test_reflect_candidates_empty(server):
+    """Reflect with candidates mode and no memories returns appropriate message."""
+    result = await call(server, "memory_reflect", mode="candidates")
+    assert "No reflection candidates" in result
+
+
+@pytest.mark.asyncio
+async def test_extract_entities_internal(server):
+    result = await call(server, "memory_extract_entities", mode="internal")
+    assert '"status": "done"' in result or '"status":"done"' in result
+    assert '"entities_found": 2' in result or '"entities_found":2' in result
+
+
+@pytest.mark.asyncio
+async def test_extract_entities_candidates(server, backend):
+    backend.store("test_user", "Uses Python 3.11 with MatrixOne", "semantic", None)
+    result = await call(server, "memory_extract_entities", mode="candidates")
+    assert '"status": "candidates"' in result or '"status":"candidates"' in result
+    assert "memory_id" in result
+
+
+@pytest.mark.asyncio
+async def test_extract_entities_candidates_empty(server):
+    result = await call(server, "memory_extract_entities", mode="candidates")
+    assert '"status": "complete"' in result or '"status":"complete"' in result
+
+
+@pytest.mark.asyncio
+async def test_link_entities(server, backend):
+    stored = backend.store("test_user", "Uses Python with MatrixOne", "semantic", None)
+    mid = stored["memory_id"]
+    import json
+
+    entities_json = json.dumps(
+        [
+            {
+                "memory_id": mid,
+                "entities": [
+                    {"name": "python", "type": "tech"},
+                    {"name": "matrixone", "type": "database"},
+                ],
+            }
+        ]
+    )
+    result = await call(server, "memory_link_entities", entities=entities_json)
+    assert '"status": "done"' in result or '"status":"done"' in result
+    assert '"entities_created": 2' in result or '"entities_created":2' in result
+    assert '"edges_created": 2' in result or '"edges_created":2' in result
+
+
+@pytest.mark.asyncio
+async def test_link_entities_invalid_json(server):
+    result = await call(server, "memory_link_entities", entities="not json")
+    assert '"status": "error"' in result or '"status":"error"' in result
+    assert "Invalid JSON" in result
+
+
+@pytest.mark.asyncio
+async def test_link_entities_invalid_format(server):
+    import json
+
+    result = await call(
+        server, "memory_link_entities", entities=json.dumps([{"no_memory_id": True}])
+    )
+    assert '"status": "error"' in result or '"status":"error"' in result
+    assert "Invalid format" in result
+
+
+@pytest.mark.asyncio
+async def test_rebuild_index(server):
+    result = await call(server, "memory_rebuild_index", table="mem_memories")
+    assert "Rebuilt IVF index" in result
+    assert "mem_memories" in result
+
+
+@pytest.mark.asyncio
+async def test_capabilities(server):
+    result = await call(server, "memory_capabilities")
+    import json
+
+    data = json.loads(result)
+    assert data["mode"] == "embedded"
+    assert "memory_store" in data["tools"]
+    assert "memory_governance" in data["tools"]
+    assert "memory_branch" in data["tools"]
+    assert "memory_capabilities" in data["tools"]

@@ -21,6 +21,33 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from mcp.server import FastMCP
 
+from memoria.mcp_local.messages import (
+    MSG_CONSOLIDATION_DONE,
+    MSG_CONSOLIDATION_SKIPPED,
+    MSG_CORRECT_NO_CONTENT,
+    MSG_CORRECT_NO_TARGET,
+    MSG_CORRECTED_BY_ID,
+    MSG_CORRECTED_BY_QUERY,
+    MSG_GOVERNANCE_DONE,
+    MSG_GOVERNANCE_SKIPPED,
+    MSG_HEALTH_HEADER,
+    MSG_INDEX_NEEDS_REBUILD,
+    MSG_INDEX_REBUILT,
+    MSG_PURGE_NO_TARGET,
+    MSG_PURGED,
+    MSG_REFLECTION_DONE,
+    MSG_REFLECTION_NO_CANDIDATES,
+    MSG_REFLECTION_SKIPPED,
+    MSG_RETRIEVE_EMPTY,
+    MSG_RETRIEVE_FOUND,
+    MSG_RETRIEVE_ITEM,
+    MSG_SEARCH_EMPTY,
+    MSG_SEARCH_FOUND,
+    MSG_SEARCH_ITEM,
+    MSG_STORED,
+    MSG_WARNING_PREFIX,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Backend protocol ──────────────────────────────────────────────────
@@ -1584,7 +1611,15 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
     def _with_warning(msg: str, result: dict) -> str:
         """Append warning from backend result dict to a tool response string."""
         w = result.get("warning")
-        return f"{msg}\n⚠️ {w}" if w else msg
+        return f"{msg}{MSG_WARNING_PREFIX}{w}" if w else msg
+
+    def _format(result: Any, fmt: str) -> str:
+        """Return JSON string if fmt='json', otherwise return result as-is (text)."""
+        if fmt == "json":
+            return (
+                _json_dumps(result) if isinstance(result, (dict, list)) else str(result)
+            )
+        return str(result)
 
     @server.tool()
     def memory_store(
@@ -1592,6 +1627,7 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         memory_type: str = "semantic",
         user_id: str | None = None,
         session_id: str | None = None,
+        format: str = "text",
     ) -> str:
         """Store a memory. Use for facts, preferences, decisions, or corrections the user shares.
 
@@ -1600,10 +1636,22 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             memory_type: One of: profile, semantic, procedural, working, tool_result. Default: semantic.
             user_id: User ID (optional, uses default if omitted).
             session_id: Session context (optional).
+            format: 'text' (default) or 'json' for structured response with memory_id, content, warning fields.
         """
         result = backend.store(_user(user_id), content, memory_type, session_id)
+        if format == "json":
+            return _format(
+                {
+                    "status": "ok",
+                    "memory_id": result["memory_id"],
+                    "content": result["content"],
+                    **({"warning": result["warning"]} if "warning" in result else {}),
+                },
+                "json",
+            )
         return _with_warning(
-            f"Stored memory {result['memory_id']}: {result['content']}", result
+            MSG_STORED.format(memory_id=result["memory_id"], content=result["content"]),
+            result,
         )
 
     @server.tool()
@@ -1612,6 +1660,7 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         top_k: int = 5,
         user_id: str | None = None,
         session_id: str | None = None,
+        format: str = "text",
     ) -> str:
         """Retrieve relevant memories for a query. Call this at conversation start or when context is needed.
 
@@ -1622,23 +1671,43 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             session_id: Session context (optional). When set, prioritizes memories from this session.
                 When None, searches across all sessions (include_cross_session=True).
                 When set, the underlying retrieval strategy ranks session-scoped memories higher.
+            format: 'text' (default) or 'json' for structured response with memory_id, type, content per item.
         """
         uid = _user(user_id)
-        # Pass session_id to backend: if set, retrieval strategy will prioritize memories from this session.
-        # If not set, retrieval searches across all sessions with cross-session inclusion enabled.
         results = backend.retrieve(uid, query, top_k, session_id=session_id)
+        warnings = backend.health_warnings(uid)
+        if format == "json":
+            return _format(
+                {
+                    "status": "ok",
+                    "count": len(results),
+                    "memories": [
+                        {
+                            "memory_id": r["memory_id"],
+                            "type": r.get("type", "fact"),
+                            "content": r["content"],
+                        }
+                        for r in results
+                    ],
+                    **({"warnings": warnings} if warnings else {}),
+                },
+                "json",
+            )
         parts: list[str] = []
         if not results:
-            parts.append(
-                "No relevant memories found. Try memory_search with a broader query to see all stored memories."
-            )
+            parts.append(MSG_RETRIEVE_EMPTY)
         else:
-            lines = [f"- [{r.get('type', 'fact')}] {r['content']}" for r in results]
-            parts.append(f"Found {len(results)} memories:\n" + "\n".join(lines))
-        # Attach health warnings if any
-        warnings = backend.health_warnings(uid)
+            lines = [
+                MSG_RETRIEVE_ITEM.format(
+                    type=r.get("type", "fact"), content=r["content"]
+                )
+                for r in results
+            ]
+            parts.append(
+                MSG_RETRIEVE_FOUND.format(count=len(results)) + "\n".join(lines)
+            )
         if warnings:
-            parts.append("\n⚠️ Memory health:\n" + "\n".join(f"- {w}" for w in warnings))
+            parts.append(MSG_HEALTH_HEADER + "\n".join(f"- {w}" for w in warnings))
         return "\n".join(parts)
 
     @server.tool()
@@ -1648,6 +1717,7 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         reason: str = "",
         query: str | None = None,
         user_id: str | None = None,
+        format: str = "text",
     ) -> str:
         """Correct an existing memory with updated information.
 
@@ -1657,21 +1727,69 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             reason: Why the correction is needed.
             query: Search query to find the memory to correct. Uses semantic search to find the best match.
             user_id: User ID (optional).
+            format: 'text' (default) or 'json' for structured response with memory_id, content fields.
         """
         if not new_content:
-            return "new_content is required."
+            if format == "json":
+                return _format(
+                    {"status": "error", "error": MSG_CORRECT_NO_CONTENT}, "json"
+                )
+            return MSG_CORRECT_NO_CONTENT
         uid = _user(user_id)
         if query and not memory_id:
             result = backend.correct_by_query(uid, query, new_content, reason)
             if result.get("error") == "no_match":
+                if format == "json":
+                    return _format(
+                        {"status": "error", "error": result["message"]}, "json"
+                    )
                 return result["message"]
+            if format == "json":
+                return _format(
+                    {
+                        "status": "ok",
+                        "memory_id": result["memory_id"],
+                        "content": result["content"],
+                        "matched_content": result.get("matched_content", ""),
+                        **(
+                            {"warning": result["warning"]}
+                            if "warning" in result
+                            else {}
+                        ),
+                    },
+                    "json",
+                )
             matched = result.get("matched_content", "")
-            msg = f"Found '{matched}' → corrected to {result['memory_id']}: {result['content']}"
+            msg = MSG_CORRECTED_BY_QUERY.format(
+                matched=matched,
+                memory_id=result["memory_id"],
+                content=result["content"],
+            )
         elif not memory_id:
-            return "Provide either memory_id or query."
+            if format == "json":
+                return _format(
+                    {"status": "error", "error": MSG_CORRECT_NO_TARGET}, "json"
+                )
+            return MSG_CORRECT_NO_TARGET
         else:
             result = backend.correct(uid, memory_id, new_content, reason)
-            msg = f"Corrected → {result['memory_id']}: {result['content']}"
+            if format == "json":
+                return _format(
+                    {
+                        "status": "ok",
+                        "memory_id": result["memory_id"],
+                        "content": result["content"],
+                        **(
+                            {"warning": result["warning"]}
+                            if "warning" in result
+                            else {}
+                        ),
+                    },
+                    "json",
+                )
+            msg = MSG_CORRECTED_BY_ID.format(
+                memory_id=result["memory_id"], content=result["content"]
+            )
         return _with_warning(msg, result)
 
     @server.tool()
@@ -1680,6 +1798,7 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         topic: str | None = None,
         reason: str = "",
         user_id: str | None = None,
+        format: str = "text",
     ) -> str:
         """Delete memories. Use memory_id for a single memory, or topic to bulk-delete all memories matching a keyword.
 
@@ -1688,11 +1807,18 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             topic: Keyword/topic — finds and deletes all matching memories.
             reason: Why it should be deleted.
             user_id: User ID (optional).
+            format: 'text' (default) or 'json' for structured response with purged count.
         """
         if not memory_id and not topic:
-            return "Provide either memory_id or topic."
+            if format == "json":
+                return _format(
+                    {"status": "error", "error": MSG_PURGE_NO_TARGET}, "json"
+                )
+            return MSG_PURGE_NO_TARGET
         result = backend.purge(_user(user_id), memory_id, topic, reason)
-        return f"Purged {result['purged']} memory(ies)."
+        if format == "json":
+            return _format({"status": "ok", "purged": result["purged"]}, "json")
+        return MSG_PURGED.format(count=result["purged"])
 
     @server.tool()
     def memory_profile(
@@ -1715,6 +1841,7 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         query: str,
         top_k: int = 10,
         user_id: str | None = None,
+        format: str = "text",
     ) -> str:
         """Semantic search over all memories.
 
@@ -1722,15 +1849,36 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             query: Search query.
             top_k: Max results (default 10).
             user_id: User ID (optional).
+            format: 'text' (default) or 'json' for structured response with memory_id, type, content per item.
         """
         results = backend.search(_user(user_id), query, top_k)
+        if format == "json":
+            return _format(
+                {
+                    "status": "ok",
+                    "count": len(results),
+                    "memories": [
+                        {
+                            "memory_id": r["memory_id"],
+                            "type": r.get("type", "fact"),
+                            "content": r["content"],
+                        }
+                        for r in results
+                    ],
+                },
+                "json",
+            )
         if not results:
-            return "No memories found."
+            return MSG_SEARCH_EMPTY
         lines = [
-            f"- [{r.get('type', 'fact')}] ({r['memory_id']}) {r['content']}"
+            MSG_SEARCH_ITEM.format(
+                type=r.get("type", "fact"),
+                memory_id=r["memory_id"],
+                content=r["content"],
+            )
             for r in results
         ]
-        return f"Found {len(results)} memories:\n" + "\n".join(lines)
+        return MSG_SEARCH_FOUND.format(count=len(results)) + "\n".join(lines)
 
     @server.tool()
     def memory_governance(
@@ -1749,15 +1897,15 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         """
         result = backend.governance(_user(user_id), force=force)
         if result.get("skipped"):
-            return f"Governance skipped (cooldown, {result['cooldown_remaining_s']}s remaining). Last result: {', '.join(f'{k}={v}' for k, v in result.items() if k not in ('skipped', 'cooldown_remaining_s', 'vector_index_health'))}"
+            return f"{MSG_GOVERNANCE_SKIPPED}{result['cooldown_remaining_s']}s remaining). Last result: {', '.join(f'{k}={v}' for k, v in result.items() if k not in ('skipped', 'cooldown_remaining_s', 'vector_index_health'))}"
         health = result.pop("vector_index_health", {})
         parts = [f"{k}={v}" for k, v in result.items()]
-        msg = f"Governance done: {', '.join(parts)}"
+        msg = f"{MSG_GOVERNANCE_DONE}{', '.join(parts)}"
         for table, h in health.items():
             if h.get("needs_rebuild") and not h.get("rebuilt"):
-                msg += f"\n⚠️  {table}: IVF index needs rebuild (rows={h.get('total_rows')}, centroids={h['centroids']}, ratio={h.get('ratio')})"
+                msg += f"\n{MSG_INDEX_NEEDS_REBUILD.format(table=table)} (rows={h.get('total_rows')}, centroids={h['centroids']}, ratio={h.get('ratio')})"
             elif h.get("rebuilt"):
-                msg += f"\n✅ {table}: IVF index rebuilt automatically"
+                msg += f"\n{MSG_INDEX_REBUILT.format(table=table)}"
             elif h.get("rebuild_error"):
                 msg += f"\n❌ {table}: IVF rebuild failed: {h['rebuild_error']}"
         return msg
@@ -1779,9 +1927,9 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
         """
         result = backend.consolidate(_user(user_id), force=force)
         if result.get("skipped"):
-            return f"Consolidation skipped (cooldown, {result['cooldown_remaining_s']}s remaining)."
+            return f"{MSG_CONSOLIDATION_SKIPPED}{result['cooldown_remaining_s']}s remaining)."
         parts = [f"{k}={v}" for k, v in result.items()]
-        return f"Consolidation done: {', '.join(parts)}"
+        return f"{MSG_CONSOLIDATION_DONE}{', '.join(parts)}"
 
     @server.tool()
     def memory_reflect(
@@ -1808,7 +1956,7 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             result = backend.get_reflect_candidates(uid)
             clusters = result.get("candidates", [])
             if not clusters:
-                return "No reflection candidates found — not enough cross-session memory patterns yet."
+                return MSG_REFLECTION_NO_CANDIDATES
             parts = []
             for i, c in enumerate(clusters, 1):
                 mems = "\n".join(
@@ -1824,10 +1972,15 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             )
         result = backend.reflect(uid, force=force)
         if result.get("skipped"):
-            return f"Reflection skipped (cooldown, {result['cooldown_remaining_s']}s remaining)."
+            return (
+                f"{MSG_REFLECTION_SKIPPED}{result['cooldown_remaining_s']}s remaining)."
+            )
         if "error" in result:
             return f"Reflection failed: {result['error']}"
-        return f"Reflection done: scenes_created={result['scenes_created']}, candidates_found={result['candidates_found']}"
+        return MSG_REFLECTION_DONE.format(
+            scenes_created=result["scenes_created"],
+            candidates_found=result["candidates_found"],
+        )
 
     @server.tool()
     def memory_extract_entities(
@@ -1961,6 +2114,46 @@ def create_server(backend: MemoryBackend, default_user: str = "default") -> Fast
             user_id: User ID (optional, unused but kept for consistency).
         """
         return backend.rebuild_index(table)
+
+    @server.tool()
+    def memory_capabilities() -> str:
+        """List available memory tools and current backend mode.
+
+        Call this to discover which tools are available in the current deployment.
+        Local (embedded) mode has full features; remote (cloud) mode may have fewer tools.
+        """
+        is_embedded = not isinstance(backend, HTTPBackend)
+        mode = "embedded" if is_embedded else "remote"
+        tools = [
+            "memory_store",
+            "memory_retrieve",
+            "memory_search",
+            "memory_correct",
+            "memory_purge",
+            "memory_profile",
+            "memory_capabilities",
+            "memory_snapshot",
+            "memory_snapshots",
+            "memory_extract_entities",
+            "memory_link_entities",
+            "memory_consolidate",
+            "memory_reflect",
+        ]
+        if is_embedded:
+            tools.extend(
+                [
+                    "memory_governance",
+                    "memory_rebuild_index",
+                    "memory_rollback",
+                    "memory_branch",
+                    "memory_branches",
+                    "memory_checkout",
+                    "memory_merge",
+                    "memory_diff",
+                    "memory_branch_delete",
+                ]
+            )
+        return _json_dumps({"mode": mode, "tools": sorted(tools)})
 
     # ── Snapshot tools ────────────────────────────────────────────────
 
