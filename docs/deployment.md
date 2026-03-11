@@ -39,6 +39,7 @@ curl --noproxy localhost http://localhost:8100/health
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MEMORIA_MASTER_KEY` | **Yes** | — | Admin API key (min 16 chars) |
+| `MEMORIA_API_KEY_SECRET` | Recommended | — | HMAC secret for API key hashing. If unset, falls back to `MASTER_KEY` — set this so rotating `MASTER_KEY` doesn't invalidate existing keys |
 | `MEMORIA_DB_HOST` | No | `matrixone` | MatrixOne host |
 | `MEMORIA_DB_PORT` | No | `6001` | MatrixOne port |
 | `MEMORIA_DB_USER` | No | `root` | Database user |
@@ -150,7 +151,8 @@ curl -X POST http://localhost:8100/admin/governance/alice/trigger \
 
 ## Security Notes
 
-- API keys are SHA-256 hashed at rest — raw keys are never stored
+- API keys are HMAC-SHA256 hashed at rest (keyed with `MEMORIA_API_KEY_SECRET`, falls back to `MASTER_KEY`) — raw keys are never stored
+- Set `MEMORIA_API_KEY_SECRET` independently of `MASTER_KEY` so you can rotate the master key without invalidating existing user API keys
 - All queries are scoped to the authenticated user's `user_id`
 - Master key is required for all admin operations
 - Snapshot names are sanitized and regex-validated before entering SQL

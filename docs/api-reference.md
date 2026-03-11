@@ -317,11 +317,12 @@ Authorization: Bearer MASTER_KEY
 ```json
 {
   "user_id": "alice",
-  "name": "alice-laptop"
+  "name": "alice-laptop",
+  "expires_at": "2027-01-01T00:00:00"
 }
 ```
 
-Auto-creates the user if new. Returns `raw_key` (shown only once).
+`expires_at` is optional. Auto-creates the user if new. Returns `raw_key` (shown only once).
 
 ### List API Keys
 
@@ -329,7 +330,23 @@ Auto-creates the user if new. Returns `raw_key` (shown only once).
 GET /auth/keys
 ```
 
-Returns keys for the authenticated user (without raw key or hash).
+Returns all active keys for the authenticated user. Fields: `key_id`, `user_id`, `name`, `key_prefix`, `created_at`, `expires_at`, `last_used_at`.
+
+### Get API Key
+
+```
+GET /auth/keys/{key_id}
+```
+
+Returns full details for a single key. `raw_key` is never returned after creation.
+
+### Rotate API Key
+
+```
+PUT /auth/keys/{key_id}/rotate
+```
+
+Atomically revokes the old key and issues a new one with the same `name`, `user_id`, and `expires_at`. Returns the new key with `raw_key` (shown only once).
 
 ### Revoke API Key
 
@@ -367,6 +384,24 @@ GET /admin/users/{user_id}/stats
 
 ```json
 {"user_id": "alice", "memory_count": 42, "snapshot_count": 3, "api_key_count": 2}
+```
+
+### List User's API Keys (Admin)
+
+```
+GET /admin/users/{user_id}/keys
+```
+
+Returns all active keys for a user with full fields (`expires_at`, `last_used_at`, etc.).
+
+### Revoke All User's API Keys (Admin)
+
+```
+DELETE /admin/users/{user_id}/keys
+```
+
+```json
+{"user_id": "alice", "revoked": 3}
 ```
 
 ### Deactivate User

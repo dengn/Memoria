@@ -6,7 +6,23 @@ inclusion: always
 
 When the user wants to set up Memoria, **do NOT jump straight into installation**. First ask key questions to determine the right path.
 
-## Decision Flow
+## Two MCP Modes — Ask First
+
+`memoria-mcp` has two distinct modes. **Determine which one applies before doing anything else.**
+
+| | Embedded mode | Remote mode |
+|---|---|---|
+| **How** | `--db-url` | `--api-url` + `--token` |
+| **Who runs the DB** | User runs MatrixOne locally or on cloud | Someone else already deployed Memoria |
+| **Embedding config** | Required (in `env` block of mcp.json) | Not needed (server handles it) |
+| **Use case** | Personal setup, local dev, self-hosted | Team/SaaS, user gets an API key from admin |
+
+**Ask the user**: "Are you setting up your own Memoria instance, or connecting to an existing Memoria server someone else deployed?"
+
+- **Own instance** → follow Decision Flow below (Questions 1–3, then Path A/B/C)
+- **Existing server** → skip to **Path D: Remote mode** — just need the server URL and API token
+
+## Decision Flow (for own instance only)
 
 ### Question 1: Which AI tool?
 Ask: "You're using Kiro, Cursor, or Claude Code? (or multiple?)"
@@ -140,6 +156,47 @@ pip install 'memoria[local-embedding]'
 cd <user-project>
 memoria init --db-url 'mysql+pymysql://<user>:<password>@<host>:<port>/<database>'
 # + embedding flags if applicable (see "Embedding provider flags" section)
+```
+
+### Path D: Remote mode (connecting to an existing Memoria server)
+
+Use this when the user has been given a server URL and API token by an admin — no DB setup, no embedding config needed.
+
+```bash
+# 1. Virtual environment
+python3 -m venv .venv
+```
+```bash
+source .venv/bin/activate
+```
+```bash
+# 2. Install (no embedding extras needed — server handles embedding)
+pip install memoria
+```
+```bash
+# 3. Configure with remote server
+cd <user-project>
+memoria init --api-url 'https://memoria-host:8100' --token 'sk-your-key...'
+```
+
+The resulting `mcp.json` will be:
+```json
+{
+  "mcpServers": {
+    "memoria": {
+      "command": "memoria-mcp",
+      "args": ["--api-url", "https://memoria-host:8100", "--token", "sk-your-key..."]
+    }
+  }
+}
+```
+
+No `env` block needed — embedding is handled server-side.
+
+```bash
+# 4. Verify
+memoria status
+# Tell user to restart their AI tool
 ```
 
 ### Embedding provider flags (for any path)

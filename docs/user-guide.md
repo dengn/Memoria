@@ -27,6 +27,19 @@ curl https://memoria-host:8100/auth/keys \
   -H "Authorization: Bearer sk-your-key..."
 ```
 
+Get a single key's details (including `last_used_at`, `expires_at`):
+```bash
+curl https://memoria-host:8100/auth/keys/KEY_ID \
+  -H "Authorization: Bearer sk-your-key..."
+```
+
+Rotate a key (revokes old, issues new with same name/expiry — atomic):
+```bash
+curl -X PUT https://memoria-host:8100/auth/keys/KEY_ID/rotate \
+  -H "Authorization: Bearer sk-your-key..."
+# Response includes new raw_key — save it immediately
+```
+
 Revoke a key:
 ```bash
 curl -X DELETE https://memoria-host:8100/auth/keys/KEY_ID \
@@ -61,6 +74,8 @@ memoria-mcp --db-url "mysql+pymysql://root:111@localhost:6001/memoria" --user al
 ```bash
 memoria-mcp --api-url "https://memoria-host:8100" --token "sk-your-key..."
 ```
+
+Remote mode supports all tools available in embedded mode. The actual tool set depends on the server tier — shared instances may have fewer features than dedicated instances.
 
 All options:
 ```

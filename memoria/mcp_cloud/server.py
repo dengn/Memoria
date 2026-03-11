@@ -317,9 +317,13 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
     async def memory_capabilities() -> str:
         """List available memory tools and current backend mode.
 
-        Call this to discover which tools are available. Cloud mode has fewer tools than local mode
-        (no branching, no governance, no index rebuild).
+        Call this to discover which tools are available.
+        In shared cloud mode, branching/governance tools may not be available.
+        In dedicated instance mode (user has their own DB), all tools are available.
         """
+        # TODO: query GET /capabilities from server to dynamically reflect what the
+        # server supports (shared vs dedicated instance). For now, list what this
+        # client exposes — the server will return 404/501 for unsupported operations.
         tools = [
             "memory_store",
             "memory_retrieve",
@@ -338,9 +342,9 @@ def create_server(api_url: str, api_key: str) -> FastMCP:
         ]
         return _json_dumps(
             {
-                "mode": "cloud",
+                "mode": "remote",
                 "tools": sorted(tools),
-                "note": "Branching, governance, and index rebuild are not available in cloud mode.",
+                "note": "Branch/rollback/governance availability depends on server tier.",
             }
         )
 

@@ -10,7 +10,7 @@
   [![Git for Data](https://img.shields.io/badge/Git%20for%20Data-Enabled-00A3CC?style=flat-square)](https://github.com/matrixorigin/matrixone)
   [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
   
-  [See It In Action](#see-it-in-action) · [Quick Start](#quick-start) · [Architecture](#architecture) · [API Reference](#api-reference) · [Why Memoria?](#why-memoria)
+  [See It In Action](#see-it-in-action) · [Quick Start](#quick-start) · [Modifying Config](#modifying-the-mcp-config) · [Architecture](#architecture) · [API Reference](#api-reference) · [Why Memoria?](#why-memoria)
   
 </div>
 
@@ -159,7 +159,16 @@ Cursor:  Let me check by calling memory_retrieve("test"):
 
 ## Quick Start
 
-### Prerequisites
+`memoria-mcp` runs in two modes — pick one before starting:
+
+| | Embedded mode | Remote mode |
+|---|---|---|
+| **Flag** | `--db-url` | `--api-url` + `--token` |
+| **You run** | MatrixOne DB (Docker or cloud) | Nothing — connect to existing server |
+| **Embedding** | Configure in `env` block | Server handles it |
+| **When** | Personal setup, local dev, self-hosted | Team/SaaS — admin gives you a URL + token |
+
+### Prerequisites (embedded mode only)
 
 - Python 3.11+
 - [MatrixOne](https://github.com/matrixorigin/matrixone) database (local Docker or [cloud](https://cloud.matrixorigin.cn))
@@ -193,9 +202,66 @@ pip install "memoria[local-embedding]"    # Local sentence-transformers (~900MB 
 
 ### 3. Configure your AI tool
 
-Create the MCP config manually for your tool:
+Run `memoria init` in your project directory — it auto-detects Kiro / Cursor / Claude and writes the MCP config + steering rules:
 
-**Kiro** — `.kiro/settings/mcp.json`:
+```bash
+cd your-project
+
+# Local DB (default)
+memoria init
+
+# With custom DB URL
+memoria init --db-url "mysql+pymysql://root:111@localhost:6001/memoria"
+
+# Remote Memoria server (SaaS / team deployment)
+memoria init --api-url "https://your-server:8100" --token "sk-your-key..."
+
+# With OpenAI-compatible embedding
+memoria init --embedding-provider openai \
+             --embedding-base-url https://api.siliconflow.cn/v1 \
+             --embedding-api-key sk-... \
+             --embedding-model BAAI/bge-m3 \
+             --embedding-dim 1024
+```
+
+This creates:
+- **Kiro**: `.kiro/settings/mcp.json` + `.kiro/steering/memory.md`
+- **Cursor**: `.cursor/mcp.json` + `.cursor/rules/memory.mdc`
+- **Claude**: `.claude/mcp.json` + `CLAUDE.md`
+
+Then restart your AI tool — database tables are created automatically when the MCP server starts.
+
+### 4. Verify
+
+```bash
+memoria status   # check config files and rule versions
+```
+
+Or ask your AI tool: *"Do you have memory tools available?"* — it should list `memory_store`, `memory_retrieve`, etc.
+
+---
+
+## Modifying the MCP Config
+
+`memoria init` generates the config once. To change settings afterwards, edit the config file directly:
+
+- **Kiro**: `.kiro/settings/mcp.json`
+- **Cursor**: `.cursor/mcp.json`
+- **Claude**: `.claude/mcp.json`
+
+**Switch from local DB to remote server:**
+```json
+{
+  "mcpServers": {
+    "memoria": {
+      "command": "memoria-mcp",
+      "args": ["--api-url", "https://your-server:8100", "--token", "sk-your-key..."]
+    }
+  }
+}
+```
+
+**Change embedding provider** (edit the `env` block):
 ```json
 {
   "mcpServers": {
@@ -214,21 +280,20 @@ Create the MCP config manually for your tool:
 }
 ```
 
-**Cursor** — `.cursor/mcp.json` (same structure)
-
-**Claude Desktop** — `claude_desktop_config.json` (same structure)
-
-Then restart your AI tool — database tables are created automatically when the MCP server starts.
-
-### 4. Verify
-
-Ask your AI tool: *"Do you have memory tools available?"* — it should list `memory_store`, `memory_retrieve`, etc.
-
-Or test directly:
+**Re-run init to overwrite** (use `--force` to also overwrite customized steering rules):
 ```bash
-memoria-mcp --db-url "mysql+pymysql://root:111@localhost:6001/memoria" --transport sse
-# Then open http://localhost:8000 in browser
+memoria init --api-url "https://new-server:8100" --token "sk-new-key..."
+# steering rules are preserved unless --force is passed
 ```
+
+**Update steering rules only** (after upgrading Memoria):
+```bash
+pip install --upgrade memoria
+memoria update-rules
+# restart your AI tool
+```
+
+Restart your AI tool after any config change.
 
 ---
 
@@ -236,7 +301,12 @@ memoria-mcp --db-url "mysql+pymysql://root:111@localhost:6001/memoria" --transpo
 
 ### Kiro
 
-Create `.kiro/settings/mcp.json`:
+```bash
+cd your-project
+memoria init --tool kiro
+```
+
+Or manually create `.kiro/settings/mcp.json`:
 ```json
 {
   "mcpServers": {
@@ -252,35 +322,21 @@ Copy `.kiro/steering/memory.md` from [docs/steering/memory.md](docs/steering/mem
 
 ### Cursor
 
-Create `.cursor/mcp.json`:
-```json
-{
-  "mcpServers": {
-    "memoria": {
-      "command": "memoria-mcp",
-      "args": ["--db-url", "mysql+pymysql://root:111@localhost:6001/memoria", "--user", "alice"]
-    }
-  }
-}
+```bash
+cd your-project
+memoria init --tool cursor
 ```
 
-Restart Cursor.
+Or manually create `.cursor/mcp.json` (same structure as above). Restart Cursor.
 
 ### Claude Desktop
 
-Edit `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "memoria": {
-      "command": "memoria-mcp",
-      "args": ["--db-url", "mysql+pymysql://root:111@localhost:6001/memoria", "--user", "alice"]
-    }
-  }
-}
+```bash
+cd your-project
+memoria init --tool claude
 ```
 
-Restart Claude Desktop.
+Or manually edit `claude_desktop_config.json` (same structure). Restart Claude Desktop.
 
 ---
 
@@ -543,7 +599,7 @@ If you're an AI agent helping a user set up Memoria, **ask before acting**:
 2. **MatrixOne database?** Already have one → get URL. Local Docker → `docker compose up -d`. [MatrixOne Cloud](https://cloud.matrixorigin.cn) → no Docker needed.
 3. **Embedding?** ⚠️ **Ask BEFORE installation.** Once the MCP server starts, the embedding dimension is locked into the database schema. Already have a service (OpenAI/SiliconFlow/Ollama)? Use it. Otherwise local is fine.
 4. **Install**: `pip install memoria` (add `[openai-embedding]` or `[local-embedding]` as needed)
-5. **Configure**: Create the MCP config JSON for their tool (see [Setup by Tool](#setup-by-tool))
+5. **Configure**: Run `memoria init` in the user's project directory (see [Quick Start](#quick-start) for flags). It auto-detects the tool and writes MCP config + steering rules.
 6. Tell user to **restart their AI tool**
 7. **Verify**: Ask the AI tool to call `memory_retrieve("test")` — should return "No relevant memories found"
 
