@@ -55,8 +55,10 @@ Install the package, then add Memoria as an MCP server in your assistant's confi
 ### Install
 
 ```bash
+# Remote mode (connecting to a managed/team server) — no extras needed:
 pip install memoria
-# With embedding support (choose one):
+
+# Embedded mode (running your own DB) — also install an embedding provider:
 pip install "memoria[openai-embedding]"   # OpenAI / SiliconFlow / any OpenAI-compatible endpoint
 pip install "memoria[local-embedding]"    # Local sentence-transformers (~900MB download)
 ```

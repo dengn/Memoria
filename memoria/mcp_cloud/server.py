@@ -11,7 +11,10 @@ from mcp.server import FastMCP
 def create_server(api_url: str, api_key: str) -> FastMCP:
     server = FastMCP("memoria")
     client = httpx.Client(
-        base_url=api_url, headers={"Authorization": f"Bearer {api_key}"}, timeout=30
+        base_url=api_url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30,
+        trust_env=False,  # ignore proxy env vars (http_proxy, https_proxy, etc.)
     )
 
     def _json_dumps(obj: dict | list) -> str:

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "memoria": {
+      "command": "memoria-mcp",
+      "args": [
+        "--api-url",
+        "http://localhost:8100",
+        "--token",
+        "sk-your-key..."
+      ]
+    }
+  }
+}

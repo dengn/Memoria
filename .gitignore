@@ -18,3 +18,6 @@ build/
 .idea/
 
 .coverage
+
+# Kiro local settings (contains personal paths and tokens)
+.kiro/settings/mcp.json

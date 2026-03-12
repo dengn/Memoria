@@ -192,8 +192,10 @@ See [docker-compose.yml](docker-compose.yml) for configuration options. Don't wa
 ### 2. Install Memoria
 
 ```bash
+# Remote mode (connecting to a managed/team server) — no extras needed:
 pip install memoria
-# With embedding support (choose one):
+
+# Embedded mode (running your own DB) — also install an embedding provider:
 pip install "memoria[openai-embedding]"   # OpenAI / SiliconFlow / any OpenAI-compatible endpoint
 pip install "memoria[local-embedding]"    # Local sentence-transformers (~900MB download)
 ```
@@ -346,11 +348,11 @@ Or manually edit `claude_desktop_config.json` (same structure). Restart Claude D
 
 Memoria needs an embedding model to vectorize memories for semantic search.
 
-| Provider | Quality | Cost | First-use latency | Ongoing latency |
-|----------|---------|------|-------------------|-----------------|
-| **Local** (default) | Good | Free, private | ~900MB download + a few seconds to load on first query | Fast (in-process) |
-| **OpenAI** | Better | API key required | None | Network round-trip |
-| **Custom service** | Varies | Self-hosted | None | Network round-trip |
+| Provider | Quality | Privacy | Cost | First-use latency | Ongoing latency |
+|----------|---------|---------|------|-------------------|-----------------|
+| **Local** (default) | Good | ✅ Data never leaves machine | Free | ~900MB download + a few seconds to load on first query | Fast (in-process) |
+| **OpenAI / SiliconFlow** | Better | ⚠️ Text sent to API | API key required | None | Network round-trip |
+| **Custom service** | Varies | Depends on host | Self-hosted | None | Network round-trip |
 
 Configure via environment variables in the MCP config `env` block:
 
@@ -583,11 +585,83 @@ pip install "memoria[local-embedding]"
 
 Expected with local embedding — model loads into memory on first query (~3-5s). Use an embedding service to avoid this by setting `EMBEDDING_PROVIDER=openai` in the MCP config `env` block.
 
+## Troubleshooting
+
+### "Cannot connect to database"
+
+```bash
+docker ps | grep matrixone
+# If not running:
+docker start matrixone
+```
+
+### "sentence-transformers not installed"
+
+```bash
+pip install "memoria[local-embedding]"
+```
+
+### First query is slow
+
+Expected with local embedding — model loads into memory on first query (~3-5s). Use an embedding service to avoid this by setting `EMBEDDING_PROVIDER=openai` in the MCP config `env` block.
+
 ### AI tool doesn't seem to use memory
 
 1. Verify `memoria-mcp` is in PATH: `which memoria-mcp`
 2. Restart the AI tool after editing the MCP config
 3. Test the server directly: `memoria-mcp --db-url "mysql+pymysql://root:111@localhost:6001/memoria"`
+
+---
+
+## Development
+
+### Quick setup (local dev)
+
+```bash
+# Start MatrixOne + API
+make start
+
+# In another terminal, configure your AI tool for remote mode:
+cd your-project
+memoria init --api-url "http://localhost:8100" --token "test-master-key-for-docker-compose"
+
+# Restart your AI tool
+```
+
+Or use embedded mode (direct DB, no API):
+```bash
+cd your-project
+memoria init --db-url "mysql+pymysql://root:111@localhost:6001/memoria"
+```
+
+### Run tests
+
+```bash
+make test-unit          # Unit tests (no DB)
+make test               # E2E tests (needs DB)
+make test-mcp           # MCP server tests
+make test-all           # All tests
+make test-all-cov       # All tests with coverage
+```
+
+### Bump version and publish
+
+```bash
+make bump-version BUMP=patch   # 0.1.1 → 0.1.2
+git add -A && git commit -m "chore: release v0.1.2"
+git tag v0.1.2
+git push && git push --tags    # Triggers PyPI publish
+```
+
+To test the published package from TestPyPI before the official release:
+
+```bash
+pip install --index-url https://mirrors.aliyun.com/pypi/simple/ \
+            --extra-index-url https://test.pypi.org/simple/ \
+            -U mo-memoria
+```
+
+> Note: `--index-url` points to a mirror for dependencies (TestPyPI doesn't host all deps), `--extra-index-url` pulls `mo-memoria` itself from TestPyPI.
 
 ---
 

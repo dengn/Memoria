@@ -28,11 +28,9 @@ This starts two services:
 
 Verify:
 ```bash
-curl --noproxy localhost http://localhost:8100/health
+curl http://localhost:8100/health
 # {"status": "ok", "database": "connected"}
 ```
-
-> If you have `http_proxy` set in your environment, add `--noproxy localhost` to curl commands.
 
 ## Environment Variables
 
