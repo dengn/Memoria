@@ -1,3 +1,4 @@
+# Validate PR title (Conventional Commits style).
 name: PR Title
 
 on:
@@ -12,12 +13,23 @@ jobs:
       - name: Validate title
         env:
           TITLE: ${{ github.event.pull_request.title }}
+          # Conventional Commits: type(scope?): description
+          # Allowed types: feat, fix, docs, style, refactor, perf, test, chore, build, ci, revert
           PATTERN: '^(feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert)(\([a-z0-9-]+\))?!?:\s+.+'
         run: |
           if echo "$TITLE" | grep -qE "$PATTERN"; then
             echo "✅ PR title OK: $TITLE"
           else
             echo "::error::Invalid PR title! Must follow Conventional Commits format."
-            echo "Examples: feat(memory): add branch support  |  fix: correct rollback logic"
+            echo ""
+            echo "✅ Examples:"
+            echo "   feat(memory): add branch support"
+            echo "   fix(embedding): correct dimension mismatch on local provider"
+            echo "   docs: update quick start guide"
+            echo "   ci: add static checks workflow"
+            echo ""
+            echo "❌ Your title: '$TITLE'"
+            echo ""
+            echo "📚 Learn more: https://www.conventionalcommits.org"
             exit 1
           fi
