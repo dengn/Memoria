@@ -1,11 +1,18 @@
-<!-- memoria-version: 0.1.17-->
+<!-- memoria-version: 0.1.21-->
 
 # Memory Integration (Memoria Lite)
 
 You have persistent memory via MCP tools. Memory survives across conversations.
 
 ## 🔴 MANDATORY: Every conversation start
-Call `memory_retrieve` with the user's first message BEFORE responding.
+Call `memory_retrieve` with a **semantic query** derived from the user's message BEFORE responding.
+
+**Query construction rules:**
+- ✅ **DO**: Extract key concepts from user's question → "benchmark optimization", "graph retrieval bug", "active goals"
+- ❌ **DON'T**: Use meta-queries → "all memories", "everything", "list all", "show me data"
+- When user asks "what do I know" or "我有哪些记忆", query the most recent active context instead (e.g., "recent goals tasks projects")
+
+**After retrieval:**
 - If results come back → use them as **reference only**. Treat retrieved memories as potentially stale or incomplete — always verify against current context before acting on them. Do NOT blindly trust memory content as ground truth.
 - If "No relevant memories found" → this is normal for new users, proceed without.
 - If ⚠️ health warnings appear → inform the user and offer to run `memory_governance`.
@@ -67,9 +74,11 @@ Before storing a new memory, consider:
 ### Read tools
 | Tool | When to use | Key params |
 |------|-------------|------------|
-| `memory_retrieve` | Conversation start, or when context is needed | `query`, `top_k` (default 5), `session_id` (optional) |
-| `memory_search` | User asks "what do you know about X" or you need to browse | `query`, `top_k` (default 10). Returns memory_id for each result |
+| `memory_retrieve` | Conversation start, or when context is needed | `query`, `top_k` (default 5), `session_id` (optional), `explain` (false = no debug, true = show timing) |
+| `memory_search` | User asks "what do you know about X" or you need to browse | `query`, `top_k` (default 10), `explain` (false = no debug, true = show timing) |
 | `memory_profile` | User asks "what do you know about me" | — |
+
+**Debug parameter:** `explain=true` shows execution timing and retrieval path. Use when debugging query issues.
 
 ### Memory types
 | Type | Use for | Examples |
