@@ -1851,7 +1851,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "memoria-api"
-version = "0.1.0"
+version = "0.1.0-rc1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1878,7 +1878,7 @@ dependencies = [
 
 [[package]]
 name = "memoria-cli"
-version = "0.1.0"
+version = "0.1.0-rc1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1902,7 +1902,7 @@ dependencies = [
 
 [[package]]
 name = "memoria-core"
-version = "0.1.0"
+version = "0.1.0-rc1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1916,7 +1916,7 @@ dependencies = [
 
 [[package]]
 name = "memoria-embedding"
-version = "0.1.0"
+version = "0.1.0-rc1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1931,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "memoria-git"
-version = "0.1.0"
+version = "0.1.0-rc1"
 dependencies = [
  "chrono",
  "memoria-core",
@@ -1947,7 +1947,7 @@ dependencies = [
 
 [[package]]
 name = "memoria-mcp"
-version = "0.1.0"
+version = "0.1.0-rc1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1973,7 +1973,7 @@ dependencies = [
 
 [[package]]
 name = "memoria-service"
-version = "0.1.0"
+version = "0.1.0-rc1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1992,7 +1992,7 @@ dependencies = [
 
 [[package]]
 name = "memoria-storage"
-version = "0.1.0"
+version = "0.1.0-rc1"
 dependencies = [
  "async-trait",
  "chrono",
