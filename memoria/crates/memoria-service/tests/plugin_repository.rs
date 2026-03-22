@@ -227,12 +227,25 @@ impl GovernanceStore for NoopStore {
     async fn cleanup_orphan_stats(&self) -> Result<i64, MemoriaError> {
         Ok(0)
     }
-    async fn cleanup_edit_log(&self, _: i64) -> Result<i64, MemoriaError> { Ok(0) }
-    async fn cleanup_feedback(&self, _: i64) -> Result<i64, MemoriaError> { Ok(0) }
+    async fn cleanup_edit_log(&self, _: i64) -> Result<i64, MemoriaError> {
+        Ok(0)
+    }
+    async fn cleanup_feedback(&self, _: i64) -> Result<i64, MemoriaError> {
+        Ok(0)
+    }
     async fn create_safety_snapshot(&self, _: &str) -> (Option<String>, Option<String>) {
         (None, None)
     }
-    async fn log_edit(&self, _: &str, _: &str, _: Option<&str>, _: Option<&str>, _: &str, _: Option<&str>) {}
+    async fn log_edit(
+        &self,
+        _: &str,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+        _: &str,
+        _: Option<&str>,
+    ) {
+    }
 }
 
 #[derive(Default)]
@@ -412,7 +425,7 @@ async fn repository_requires_review_before_activation_and_startup_load() {
         .any(|event| event.event_type == "binding.loaded"));
 
     let sql_store = Arc::new(store);
-    let service = Arc::new(MemoryService::new_sql_with_llm(sql_store, None, None));
+    let service = Arc::new(MemoryService::new_sql_with_llm(sql_store, None, None).await);
     let config = Config {
         db_url: db_url(),
         db_name: "memoria_test".into(),
